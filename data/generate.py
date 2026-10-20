@@ -11,8 +11,9 @@ over n * (1 - dup_rate) real-world entities). Output is a pure function of the
 arguments: the same seed gives byte-identical files.
 
 `dup_type` is "original" (the first record of an entity), "dup" (an ordinary
-corrupted duplicate), "hard_dup" (about 2% of duplicates) or "drift_chain" (all three
-records of an identity-drift entity, see below).
+corrupted duplicate), "hard_dup" (about 2% of duplicates), "drift_chain" (all three
+records of an identity-drift entity, see below) or "household_same_name" (the single
+record of a same-name child, see below).
 
 Safety invariant: an ordinary duplicate never carries a *different* email AND a
 *different* phone from its entity, since that would trip the project's
@@ -23,6 +24,12 @@ up NO_MATCH or REVIEW. Households (distinct people sharing a surname and address
 are generated as hard negatives; about 5% of them also share the household phone or
 email with a family member who has a different first name, so an exact identifier
 match alone is not proof of the same person.
+
+Same-name households (Jr./Sr.): about 2% of household members are the host's child
+with the host's first AND last name, the host's phone or email, their own other
+identifier, and a birth date 18-40 years later. The child is a separate entity with
+exactly one record (no duplicates, never a drift chain), labelled
+"household_same_name"; every pair of it with the parent's records is a non-duplicate.
 
 Identity drift: about 2% of entities get exactly three records, in time order, where
 the phone changes between records 1 -> 2 and the email changes between 2 -> 3 (both
@@ -118,6 +125,7 @@ P_CASE_NOISE = 0.15
 P_HARD_DUP = 0.02  # share of duplicates that differ on BOTH email and phone
 P_HOUSEHOLD = 0.03  # share of entities that are a second person at an existing address
 P_SHARED_ID = 0.05  # share of household members that reuse the host's phone or email
+P_SAME_NAME = 0.02  # share of household members who are the host's same-name Jr.
 P_DRIFT = 0.02  # share of entities with a 3-record phone-then-email drift chain
 DRIFT_WINDOW_DAYS = 300  # each chain step is dated in its own window, oldest first
 
@@ -152,6 +160,7 @@ class Entity:
         "first",
         "last",
         "phone",
+        "same_name_as",
         "state",
         "street",
         "zip",
@@ -173,6 +182,7 @@ class Entity:
             zip_,
             dob,
         )
+        self.same_name_as: str | None = None  # eid of the same-name parent (Jr./Sr.)
 
 
 class Generator:
@@ -233,11 +243,17 @@ class Generator:
     def make_entity(self, idx: int, household_of: Entity | None = None) -> Entity:
         first, last = self._person_name()
         shared: str | None = None  # "phone" / "email" reused from the household host
+        same_name = False  # the host's same-name child (Jr.)
         if household_of is not None:
             last = household_of.last
             street, city, state, zip_ = (household_of.street, household_of.city,
                                          household_of.state, household_of.zip)  # fmt: skip
-            if self.rng.random() < P_SHARED_ID:
+            if self.rng.random() < P_SAME_NAME:
+                # Same-name child: shares the parent's first name and one identifier,
+                # born 18-40 years later.
+                first, same_name = household_of.first, True
+                shared = self.rng.choice(["phone", "email"])
+            elif self.rng.random() < P_SHARED_ID:
                 shared = self.rng.choice(["phone", "email"])
                 while first.lower() == household_of.first.lower():
                     first, _ = self._person_name()
@@ -249,6 +265,10 @@ class Generator:
                 self.fake.zipcode(),
             )
         dob = date(1940, 1, 1) + timedelta(days=self.rng.randrange(0, 365 * 65))
+        if household_of is not None and same_name:
+            dob = household_of.dob + timedelta(
+                days=365 * self.rng.randint(18, 40) + self.rng.randrange(0, 365)
+            )
         email = (
             household_of.email
             if household_of is not None and shared == "email"
@@ -259,9 +279,12 @@ class Generator:
             if household_of is not None and shared == "phone"
             else self._unique_phone()
         )
-        return Entity(
+        entity = Entity(
             f"E{idx:06d}", first, last, email, phone, street, city, state, zip_, dob,
         )  # fmt: skip
+        if household_of is not None and same_name:
+            entity.same_name_as = household_of.eid
+        return entity
 
     # ---- records --------------------------------------------------------------------
 
@@ -434,9 +457,12 @@ def generate(
         entities.append(g.make_entity(i + 1, household_of=host))
 
     # Drift entities take 3 records each: their original plus 2 duplicate slots.
+    # Same-name children get exactly one record and no duplicates, so every pair that
+    # involves one is a parent/child non-duplicate.
+    eligible = [i for i, e in enumerate(entities) if e.same_name_as is None]
     n_drift = min(round(n_entities * P_DRIFT), n_dups // 2)
-    drift = {entities[i].eid for i in sorted(rng.sample(range(n_entities), n_drift))}
-    regular = [e for e in entities if e.eid not in drift]
+    drift = {entities[i].eid for i in sorted(rng.sample(eligible, n_drift))}
+    regular = [e for e in entities if e.eid not in drift and e.same_name_as is None]
 
     # (entity, dup_type, source, drift step) plan, then shuffled into record-id order.
     plan: list[tuple[Entity, str, str, int]] = []
@@ -447,6 +473,8 @@ def generate(
         if e.eid in drift:
             plan.append((e, "drift_chain", s, 0))
             plan.extend((e, "drift_chain", rng.choice(SOURCES), k) for k in (1, 2))
+        elif e.same_name_as is not None:
+            plan.append((e, "household_same_name", s, 0))
         else:
             plan.append((e, "original", s, 0))
     for _ in range(n_dups - 2 * n_drift):
@@ -469,7 +497,7 @@ def generate(
                 rid,
                 e,
                 source,
-                duplicate=kind != "original",
+                duplicate=kind in ("dup", "hard_dup"),
                 ref_updated=ref,
                 hard=kind == "hard_dup",
             )
@@ -516,7 +544,8 @@ def main(
     typer.echo(
         f"{len(truth_rows)} records, {n_entities} entities, {len(truth_rows) - n_entities} duplicates "
         f"({sum(t == 'hard_dup' for _, _, t in truth_rows)} hard_dup, "
-        f"{sum(t == 'drift_chain' for _, _, t in truth_rows) // 3} drift chains)"
+        f"{sum(t == 'drift_chain' for _, _, t in truth_rows) // 3} drift chains, "
+        f"{sum(t == 'household_same_name' for _, _, t in truth_rows)} same-name children)"
     )
     for s, rows in by_source.items():
         typer.echo(f"  {s}: {len(rows)} -> {out / (s + '.csv')}")

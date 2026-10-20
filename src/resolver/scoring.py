@@ -16,6 +16,7 @@ from rapidfuzz.distance import JaroWinkler
 
 from resolver.normalize import (
     normalize_address,
+    normalize_date,
     normalize_email,
     normalize_name,
     normalize_phone,
@@ -43,6 +44,7 @@ class NormalizedRecord(TypedDict, total=False):
     email: str | None
     phone: str | None  # E.164
     address: str | None
+    dob: str | None  # ISO date; a gate on exact-ID matches, not a scored field
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,7 @@ def normalize_record(raw: Mapping[str, str | None]) -> NormalizedRecord:
         "email": normalize_email(raw.get("email")),
         "phone": normalize_phone(raw.get("phone")),
         "address": normalize_address(raw.get("address")),
+        "dob": normalize_date(raw.get("dob")),
     }
 
 
@@ -205,7 +208,11 @@ def score_pair(
       1. conflicting identifiers -> NO_MATCH, rule="conflict"
       2. exact normalized email or phone match -> MATCH, rule="exact_id", but only
          if the first names agree; otherwise REVIEW, rule="shared_identifier"
-         (a household phone or family email) or rule="exact_id_no_name"
+         (a household phone or family email) or rule="exact_id_no_name".
+         Identical first names (after nickname normalization) with both birth
+         dates present and different -> REVIEW, rule="exact_id_dob_mismatch".
+         Similar but not identical first names with the other identifier present
+         on both records and different -> REVIEW, rule="exact_id_other_mismatch"
       3. weighted score vs thresholds -> MATCH / REVIEW / NO_MATCH, rule="weighted"
          A would-be MATCH is capped at REVIEW when it rests on too little weight
          (rule="weighted_low_evidence") or when both records carry a differing
@@ -249,6 +256,21 @@ def score_pair(
         checks["first_name"] = first_sim
         if first_sim < cfg.min_first_name_similarity:
             return result(Decision.REVIEW, "shared_identifier")
+        if first_sim == 1.0:
+            # Identical first names: a differing second identifier is usually the
+            # same person's new phone or email, but a parent and child with the same
+            # name (Jr./Sr.) share a household identifier; their birth dates differ.
+            ld, rd = left.get("dob"), right.get("dob")
+            if ld and rd:
+                checks["dob"] = 1.0 if ld == rd else 0.0
+                if ld != rd:
+                    return result(Decision.REVIEW, "exact_id_dob_mismatch")
+            return result(Decision.MATCH, "exact_id")
+        # Similar but not identical first names, and the other identifier is on both
+        # records and differs: the same counter-evidence as weighted_id_mismatch (a
+        # household phone with each person's own email, e.g. Dustin / Destiny).
+        if scores.get("email", 1.0) < 1.0 or scores.get("phone", 1.0) < 1.0:
+            return result(Decision.REVIEW, "exact_id_other_mismatch")
         return result(Decision.MATCH, "exact_id")
     if not total:
         return result(Decision.NO_MATCH, "no_evidence")

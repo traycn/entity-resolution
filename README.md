@@ -16,15 +16,20 @@ The same customer often exists as several records across CRM, ad platforms, and 
 - Evaluation against labeled synthetic ground truth.
 
 ## Result
-_Fill from `make eval` output only._
+_Written by `make eval` between the markers below; do not edit by hand._
+
+<!-- results:start -->
+Seed 42, 50,000 synthetic records. Other seeds (tuning and held-out), recall by duplicate kind, cluster-level metrics and the threshold sweep: [docs/results.md](docs/results.md).
 
 | Metric | Value |
 |---|---|
-| Records processed | |
-| Duplicates resolved | |
-| Pairwise precision | |
-| Pairwise recall | |
-| Runtime (50k records) | |
+| Records processed | 50,000 |
+| Duplicates resolved | 10,052 records merged away |
+| Pairwise precision | 0.9996 (4 wrong-entity pairs; 0 of 238 hard_dup pairs merged) |
+| Pairwise recall | 0.8659 on ordinary duplicates; 0.7644 on all true pairs |
+| Pairs sent to human review | 2,226 |
+| Runtime (50k records) | 4.5 s (block, normalize, score, cluster) |
+<!-- results:end -->
 
 ## Run it
 ```bash

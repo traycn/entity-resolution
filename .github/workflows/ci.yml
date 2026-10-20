@@ -16,5 +16,5 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
-      - run: uv run mypy --strict src
+      - run: uv run mypy --strict src eval
       - run: uv run pytest -q

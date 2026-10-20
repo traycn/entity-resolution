@@ -83,6 +83,7 @@ def test_normalize_record_maps_first_name_nicknames_only() -> None:
         "email": "bobwill@gmail.com",
         "phone": "+13105550100",
         "address": "12 main street",
+        "dob": None,
     }
 
 
@@ -145,7 +146,12 @@ def test_name_and_address_alone_never_auto_merge() -> None:
 
 
 def _person(
-    first: str, last: str, *, phone: str | None = None, email: str | None = None
+    first: str,
+    last: str,
+    *,
+    phone: str | None = None,
+    email: str | None = None,
+    dob: str | None = None,
 ) -> NormalizedRecord:
     return {
         "name": f"{first} {last}",
@@ -154,6 +160,7 @@ def _person(
         "address": "12 main street",
         "phone": phone,
         "email": email,
+        "dob": dob,
     }
 
 
@@ -188,6 +195,159 @@ def test_shared_phone_with_agreeing_first_name_matches(
     result = score_pair(left, right, Thresholds())
     assert (result.decision, result.rule) == (Decision.MATCH, "exact_id")
     assert "first_name" in result.explanation()["checks"]
+
+
+def test_shared_phone_similar_first_names_different_emails_is_review() -> None:
+    # Seed 1234: Dustin and Destiny Smith share a household phone; their first
+    # names clear min_first_name_similarity, but each has their own email.
+    left = normalize_record(
+        {
+            "record_id": "R0004057",
+            "first_name": "Dustin",
+            "last_name": "Smith",
+            "email": "DUSTINSMITH@OUTLOOK.COM",
+            "phone": "718.667.2532",
+            "address": "768 Stanley Isle",
+        }
+    )
+    right = normalize_record(
+        {
+            "record_id": "R0049259",
+            "first_name": "Destiny",
+            "last_name": "Smith",
+            "email": "smith.destiny30@hotmail.com",
+            "phone": "718-667-2532",
+            "address": "768 Stanley Isle",
+        }
+    )
+    result = score_pair(left, right, Thresholds())
+    assert result.checks["first_name"] >= load_config().min_first_name_similarity
+    assert (result.decision, result.rule) == (
+        Decision.REVIEW,
+        "exact_id_other_mismatch",
+    )
+    assert result.field_scores["phone"] == 1.0
+    assert result.field_scores["email"] < 1.0
+
+
+PHONE, OTHER_PHONE = "+13105550100", "+13105550199"
+
+
+@pytest.mark.parametrize(
+    ("right_first", "left_ids", "right_ids", "expected"),
+    [
+        # similar, not identical first names: a differing other identifier -> REVIEW
+        (
+            "anna",
+            {"phone": PHONE, "email": "ana@x.com"},
+            {"phone": PHONE, "email": "ana.s@y.com"},
+            (Decision.REVIEW, "exact_id_other_mismatch"),
+        ),
+        (
+            "anna",
+            {"phone": PHONE, "email": "ana@x.com"},
+            {"phone": OTHER_PHONE, "email": "ana@x.com"},
+            (Decision.REVIEW, "exact_id_other_mismatch"),
+        ),
+        # ... but a missing other identifier is no counter-evidence
+        (
+            "anna",
+            {"phone": PHONE, "email": "ana@x.com"},
+            {"phone": PHONE, "email": None},
+            (Decision.MATCH, "exact_id"),
+        ),
+        # identical first names: a new email or phone alone does not block the merge
+        (
+            "ana",
+            {"phone": PHONE, "email": "ana@x.com"},
+            {"phone": PHONE, "email": "ana.s@y.com"},
+            (Decision.MATCH, "exact_id"),
+        ),
+        (
+            "ana",
+            {"phone": PHONE, "email": "ana@x.com"},
+            {"phone": OTHER_PHONE, "email": "ana@x.com"},
+            (Decision.MATCH, "exact_id"),
+        ),
+        # identical first names, both birth dates present and different -> REVIEW
+        (
+            "ana",
+            {"phone": PHONE, "dob": "1960-03-01"},
+            {"phone": PHONE, "dob": "1991-07-15"},
+            (Decision.REVIEW, "exact_id_dob_mismatch"),
+        ),
+        # identical first names, same birth date, or one missing -> MATCH
+        (
+            "ana",
+            {"phone": PHONE, "dob": "1960-03-01"},
+            {"phone": PHONE, "dob": "1960-03-01"},
+            (Decision.MATCH, "exact_id"),
+        ),
+        (
+            "ana",
+            {"phone": PHONE, "dob": "1960-03-01"},
+            {"phone": PHONE, "dob": None},
+            (Decision.MATCH, "exact_id"),
+        ),
+    ],
+)
+def test_exact_id_gates(
+    right_first: str,
+    left_ids: dict[str, str | None],
+    right_ids: dict[str, str | None],
+    expected: tuple[Decision, str],
+) -> None:
+    left = _person("ana", "silva", **left_ids)
+    right = _person(right_first, "silva", **right_ids)
+    result = score_pair(left, right, Thresholds())
+    assert (result.decision, result.rule) == expected
+
+
+def test_nickname_counts_as_identical_first_name() -> None:
+    # Bob -> robert after normalization, so the other-identifier gate does not apply.
+    left = normalize_record(
+        {"first_name": "Bob", "last_name": "Hale", "phone": "310 555 0100",
+         "email": "bob@x.com"}
+    )  # fmt: skip
+    right = normalize_record(
+        {"first_name": "Robert", "last_name": "Hale", "phone": "310-555-0100",
+         "email": "rhale@y.com"}
+    )  # fmt: skip
+    result = score_pair(left, right, Thresholds())
+    assert (result.decision, result.rule) == (Decision.MATCH, "exact_id")
+
+
+def test_jr_sr_same_name_shared_phone_different_dob_is_review() -> None:
+    parent = normalize_record(
+        {"record_id": "P", "first_name": "Carol", "last_name": "Wade",
+         "email": "carol.wade@x.com", "phone": "(212) 555-0142", "dob": "03/14/1958"}
+    )  # fmt: skip
+    child = normalize_record(
+        {"record_id": "C", "first_name": "Carol", "last_name": "Wade",
+         "email": "cwade91@y.com", "phone": "212-555-0142", "dob": "1991-06-02"}
+    )  # fmt: skip
+    result = score_pair(parent, child, Thresholds())
+    assert (result.decision, result.rule) == (Decision.REVIEW, "exact_id_dob_mismatch")
+    assert result.checks == {"first_name": 1.0, "dob": 0.0}
+
+
+def test_jr_sr_without_a_dob_on_one_side_still_matches() -> None:
+    # Known gap: with identical names and one birth date missing, nothing tells a
+    # parent from a child, so the shared identifier merges them.
+    parent = _person("carol", "wade", phone=PHONE, email="carol.wade@x.com")
+    child = _person(
+        "carol", "wade", phone=PHONE, email="cwade91@y.com", dob="1991-06-02"
+    )
+    result = score_pair(parent, child, Thresholds())
+    assert (result.decision, result.rule) == (Decision.MATCH, "exact_id")
+
+
+def test_shared_identifier_takes_precedence_over_other_mismatch() -> None:
+    # Names disagree AND the other identifier differs: the household label wins.
+    left = _person("kenneth", "lopez", phone="+13105550100", email="kl@x.com")
+    right = _person("jeremy", "lopez", phone="+13105550100", email="jl@x.com")
+    result = score_pair(left, right, Thresholds())
+    assert result.rule == "shared_identifier"
 
 
 def test_exact_id_without_names_is_review() -> None:

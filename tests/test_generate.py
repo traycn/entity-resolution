@@ -83,10 +83,18 @@ def test_only_hard_dups_conflict_on_hard_identifiers(dataset):
 def test_hard_dups_are_about_two_percent_and_really_conflict(dataset):
     by_source, truth = dataset
     rows = {r["record_id"]: r for rs in by_source.values() for r in rs}
-    n_dups = sum(k != "original" for _, _, k in truth)
+    n_dups = sum(k not in ("original", "household_same_name") for _, _, k in truth)
     hard = [(rid, eid) for rid, eid, k in truth if k == "hard_dup"]
     assert 0.005 < len(hard) / n_dups < 0.04
-    assert {k for _, _, k in truth} == {"original", "dup", "hard_dup", "drift_chain"}
+    kinds = {k for _, _, k in truth}
+    assert {"original", "dup", "hard_dup", "drift_chain"} <= kinds
+    assert kinds <= {
+        "original",
+        "dup",
+        "hard_dup",
+        "drift_chain",
+        "household_same_name",
+    }
     originals = {eid: rows[rid] for rid, eid, k in truth if k == "original"}
     for rid, eid in hard:
         assert rows[rid]["email"] and rows[rid]["phone"]
@@ -179,3 +187,28 @@ def test_rejects_bad_args():
         gen.generate(0, 0.25, 1)
     with pytest.raises(ValueError):
         gen.generate(10, 1.0, 1)
+
+
+def test_same_name_child_shares_name_and_one_identifier_not_dob(monkeypatch):
+    monkeypatch.setattr(gen, "P_SAME_NAME", 1.0)
+    g = gen.Generator(5)
+    for i in range(50):
+        parent = g.make_entity(2 * i + 1)
+        child = g.make_entity(2 * i + 2, household_of=parent)
+        assert child.same_name_as == parent.eid
+        assert (child.first, child.last) == (parent.first, parent.last)
+        assert (child.phone == parent.phone) != (child.email == parent.email)
+        assert (child.dob - parent.dob).days >= 18 * 365
+
+
+def test_same_name_children_are_single_labelled_records(monkeypatch):
+    monkeypatch.setattr(gen, "P_SAME_NAME", 1.0)  # every household member is a Jr.
+    _, truth = gen.generate(3000, 0.25, 11)
+    by_entity = defaultdict(list)
+    for rid, eid, kind in truth:
+        by_entity[eid].append(kind)
+    children = [
+        eid for eid, kinds in by_entity.items() if "household_same_name" in kinds
+    ]
+    assert len(children) > 20
+    assert all(by_entity[eid] == ["household_same_name"] for eid in children)
