@@ -59,6 +59,12 @@ Detail for seed 42, 50,000 synthetic records. Every seed, recall by duplicate ki
 ## Review UI
 `make review` opens a queue of every pair the scorer was unsure about, grouped by the rule that fired, plus every cluster the conflict check split. Each item shows the records side by side with a per-field *same / differs* badge, the field scores and weights, the rule in plain words ("Same phone, different first names") and, for splits, the links that connected the records and the conflicts that split them.
 
+![Review queue: groups by rule with decided counts in the sidebar, Approve / Reject / Previous / Next with their shortcut keys, and the current item's records side by side](docs/img/review-queue.png)
+
+A conflict-split item: three records joined by a shared email and a shared phone, where the first and last differ on both. The split cut the email link and kept the phone link.
+
+![Conflict-split item: three records side by side with per-field agreement, the MATCH edges that linked them (one cut by the split, one kept), the conflicting pair and the two resulting clusters](docs/img/review-split.png)
+
 | Key | Action |
 |---|---|
 | <kbd>A</kbd> | Approve (pair: same person; split: split is correct) |
