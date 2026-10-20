@@ -319,6 +319,7 @@ class SameNameOutcome:
     children: int  # household_same_name records
     rules: Counter[str]  # "DECISION/rule" -> Jr./Sr. pairs
     merged: int  # children whose cluster holds another entity's record
+    wrong_pairs: int = 0  # co-clustered different-entity pairs involving a child
 
     @property
     def pairs(self) -> int:
@@ -344,12 +345,16 @@ def same_name_outcome(
             and _shares_identifier(prep.records[a], prep.records[b])
         ):
             rules[f"{res.decision.value}/{res.rule}"] += 1
-    merged = sum(
-        sum(r in truth.same_name for r in c)
-        for c in clusters
-        if len({truth.entity[r] for r in c}) > 1
+    mixed = [c for c in clusters if len({truth.entity[r] for r in c}) > 1]
+    merged = sum(sum(r in truth.same_name for r in c) for c in mixed)
+    wrong = sum(
+        1
+        for c in mixed
+        for a, b in combinations(c, 2)
+        if truth.entity[a] != truth.entity[b]
+        and (a in truth.same_name or b in truth.same_name)
     )
-    return SameNameOutcome(len(truth.same_name), rules, merged)
+    return SameNameOutcome(len(truth.same_name), rules, merged, wrong)
 
 
 @dataclass
@@ -560,6 +565,14 @@ def render_markdown(
         + ", ".join(f"seed {r.label}: {r.pairwise.false_positives:,}" for r in reports)
         + ".",
         "",
+        "## Exact-ID policy comparison",
+        "",
+        "_Written by `make compare` (`eval/compare_policies.py`)._",
+        "",
+        "<!-- policies:start -->",
+        "_Not generated yet: run `make compare`._",
+        "<!-- policies:end -->",
+        "",
         "## Pipeline",
         "",
         (
@@ -688,14 +701,6 @@ def render_markdown(
             )
     lines += [
         "",
-        "## Exact-ID policy comparison",
-        "",
-        "_Written by `make compare` (`eval/compare_policies.py`)._",
-        "",
-        "<!-- policies:start -->",
-        "_Not generated yet: run `make compare`._",
-        "<!-- policies:end -->",
-        "",
         "## Known limitations",
         "",
         (
@@ -704,6 +709,12 @@ def render_markdown(
             "normalizer parses, so the DOB guard (`exact_id_dob_mismatch`) sends no true "
             "duplicate to REVIEW here. On real data, DOB typos would turn some true "
             "duplicates into REVIEW pairs: its recall cost is likely understated."
+        ),
+        (
+            "- **Households with similar first names.** A shared household phone or email "
+            "plus first names that clear `min_first_name_similarity` (0.80 Jaro-Winkler, "
+            "e.g. Margaret / Maria) MATCHes when no second identifier is present to "
+            "contradict it. These are the wrong-entity pairs that do not involve a Jr./Sr."
         ),
         (
             "- **hard_dup pairs are never merged by design** (they differ on both email "
@@ -758,16 +769,36 @@ def replace_block(text: str, name: str, content: str) -> str:
     return f"{text[:i]}{start}\n{content}\n{text[j:]}"
 
 
-def update_readme(readme: Path, main: SeedReport, results: Path) -> None:
-    """Rewrite the README Result table (between the results markers) from `main`."""
+def readme_headline(reports: Sequence[SeedReport], link: str) -> str:
+    precisions = [r.pairwise.precision for r in reports]
+    recalls = [r.pairwise.kind_recall("ordinary") for r in reports]
+    wrong = sum(r.pairwise.false_positives for r in reports)
+    jr_sr = sum(r.same_name.wrong_pairs for r in reports)
+    hard = sum(r.pairwise.found["hard_dup"] for r in reports)
+    share = "All" if jr_sr == wrong else f"{jr_sr} of the"
+    return (
+        f"**Pairwise precision {sum(precisions) / len(precisions):.4f}** (mean over "
+        f"{len(reports)} seeds, range {min(precisions):.4f}-{max(precisions):.4f}) at "
+        f"**{sum(recalls) / len(recalls):.4f} recall on ordinary duplicates**, with "
+        f"{hard} hard_dup merges. {share} {wrong} wrong-entity pairs across all seeds "
+        "involve a same-name parent and child (Jr./Sr.); every wrong merge links "
+        "different people through a shared phone or email. See "
+        f"[Known limitations]({link}#known-limitations)."
+    )
+
+
+def update_readme(
+    readme: Path, main: SeedReport, reports: Sequence[SeedReport], results: Path
+) -> None:
+    """Rewrite the README headline (all seeds) and Result table (`main`) blocks."""
     pw = main.pairwise
     link = results.resolve().relative_to(readme.resolve().parent, walk_up=True)
     table = "\n".join(
         [
             (
-                f"Seed {main.seed}, {main.n_records:,} synthetic records. Other seeds (tuning "
-                "and held-out), recall by duplicate kind, cluster-level metrics and the "
-                f"threshold sweep: [{link.as_posix()}]({link.as_posix()})."
+                f"Detail for seed {main.seed}, {main.n_records:,} synthetic records. Every "
+                "seed, recall by duplicate kind, cluster-level metrics and the threshold "
+                f"sweep: [{link.as_posix()}]({link.as_posix()})."
             ),
             "",
             "| Metric | Value |",
@@ -794,6 +825,7 @@ def update_readme(readme: Path, main: SeedReport, results: Path) -> None:
         ]
     )
     text = readme.read_text(encoding="utf-8")
+    text = replace_block(text, "headline", readme_headline(reports, link.as_posix()))
     readme.write_text(replace_block(text, "results", table), encoding="utf-8")
 
 
@@ -857,7 +889,7 @@ def main(
                 text = replace_block(text, name, kept)
     results.write_text(text, encoding="utf-8")
     if readme is not None:
-        update_readme(readme, reports[0], results)
+        update_readme(readme, reports[0], reports, results)
     print_summary(reports)
     print(f"wrote {results} and {chart}" + (f", updated {readme}" if readme else ""))
 

@@ -26,8 +26,9 @@ email with a family member who has a different first name, so an exact identifie
 match alone is not proof of the same person.
 
 Same-name households (Jr./Sr.): about 2% of household members are the host's child
-with the host's first AND last name, the host's phone or email, their own other
-identifier, and a birth date 18-40 years later. The child is a separate entity with
+(or, when the host is too young, parent) with the host's first AND last name, the
+host's phone or email, their own other identifier, and a birth date 18-40 years
+apart, never after 2007. The child is a separate entity with
 exactly one record (no duplicates, never a drift chain), labelled
 "household_same_name"; every pair of it with the parent's records is a non-duplicate.
 
@@ -125,6 +126,7 @@ P_CASE_NOISE = 0.15
 P_HARD_DUP = 0.02  # share of duplicates that differ on BOTH email and phone
 P_HOUSEHOLD = 0.03  # share of entities that are a second person at an existing address
 P_SHARED_ID = 0.05  # share of household members that reuse the host's phone or email
+LATEST_DOB = date(2007, 12, 31)  # everyone is an adult on the 2025 reference date
 P_SAME_NAME = 0.02  # share of household members who are the host's same-name Jr.
 P_DRIFT = 0.02  # share of entities with a 3-record phone-then-email drift chain
 DRIFT_WINDOW_DAYS = 300  # each chain step is dated in its own window, oldest first
@@ -266,9 +268,14 @@ class Generator:
             )
         dob = date(1940, 1, 1) + timedelta(days=self.rng.randrange(0, 365 * 65))
         if household_of is not None and same_name:
-            dob = household_of.dob + timedelta(
+            # 18-40 years apart; the relative is the older one (Sr.) when a younger
+            # one would be born after LATEST_DOB.
+            gap = timedelta(
                 days=365 * self.rng.randint(18, 40) + self.rng.randrange(0, 365)
             )
+            dob = household_of.dob + gap
+            if dob > LATEST_DOB:
+                dob = household_of.dob - gap
         email = (
             household_of.email
             if household_of is not None and shared == "email"

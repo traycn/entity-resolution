@@ -249,6 +249,9 @@ def main(
     results: Annotated[Path, typer.Option(help="Markdown report to update.")] = Path(
         "docs/results.md"
     ),
+    readme: Annotated[
+        Path | None, typer.Option(help="README whose policy table to rewrite.")
+    ] = None,
 ) -> None:
     seeds = list(seed) if seed else list(SEEDS)
     rows: list[PolicyRow] = []
@@ -279,7 +282,11 @@ def main(
     text = replace_block(text, "policies", render_policies(rows, shipped[0], seeds))
     text = replace_block(text, "dob-gap", render_gap(rows, shipped[0]))
     results.write_text(text, encoding="utf-8")
-    print(f"updated {results}")
+    if readme is not None:
+        mean_table = render_policies(rows, shipped[0], seeds).split("\n\nPer seed:")[0]
+        rt = readme.read_text(encoding="utf-8")
+        readme.write_text(replace_block(rt, "policies", mean_table), encoding="utf-8")
+    print(f"updated {results}" + (f" and {readme}" if readme else ""))
 
 
 if __name__ == "__main__":

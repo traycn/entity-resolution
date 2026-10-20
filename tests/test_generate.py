@@ -198,7 +198,8 @@ def test_same_name_child_shares_name_and_one_identifier_not_dob(monkeypatch):
         assert child.same_name_as == parent.eid
         assert (child.first, child.last) == (parent.first, parent.last)
         assert (child.phone == parent.phone) != (child.email == parent.email)
-        assert (child.dob - parent.dob).days >= 18 * 365
+        assert abs((child.dob - parent.dob).days) >= 18 * 365
+        assert child.dob <= gen.LATEST_DOB
 
 
 def test_same_name_children_are_single_labelled_records(monkeypatch):

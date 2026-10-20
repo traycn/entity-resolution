@@ -21,16 +21,62 @@ Duplicate kinds: **ordinary** pairs; **hard_dup** pairs (differ on both email an
 
 Precision = co-clustered pairs of the same entity (excluding hard_dup) / all co-clustered pairs. False positives (pairs of different entities): seed 42: 4, seed 7: 2, seed 1234: 2, seed 2026 (held out): 1, seed 99 (held out): 3, seed 31337 (held out): 0.
 
+## Exact-ID policy comparison
+
+_Written by `make compare` (`eval/compare_policies.py`)._
+
+<!-- policies:start -->
+Same data for every policy (seeds 42, 7, 1234, 2026, 99, 31337). Only pairs that reach the exact-ID branch with agreeing first names are re-decided. Shipped policy: **refined (name-aware + DOB mismatch)** (reproduces `score_pair` exactly).
+
+Mean over all seeds (Jr./Sr. and mixed clusters summed):
+
+| Policy | Precision | Ordinary recall | REVIEW queue | drift_chain merged | Mixed clusters | Jr./Sr. pairs MATCHed |
+|---|---:|---:|---:|---:|---:|---:|
+| original (no mismatch rule) | 0.9982 | 0.8876 | 1,662 | 739 / 2,250 | 92 | 118 / 118 |
+| strict (any other-ID mismatch) | 0.9993 | 0.7379 | 4,990 | 0 / 2,250 | 28 | 30 / 118 |
+| **refined (name-aware + DOB mismatch)** | 0.9998 | 0.8698 | 2,208 | 649 / 2,250 | 6 | 6 / 118 |
+| refined + missing-DOB guard | 0.9999 | 0.8431 | 2,902 | 520 / 2,250 | 2 | 1 / 118 |
+
+Per seed:
+
+| Seed | Policy | Precision | Ordinary recall | REVIEW | drift_chain merged | Mixed | Jr./Sr. MATCHed | Children merged |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 42 | original (no mismatch rule) | 0.9988 | 0.8855 | 1,649 | 737 | 10 | 12 / 12 | 9 / 14 |
+| 42 | strict (any other-ID mismatch) | 0.9992 | 0.7340 | 4,999 | 0 | 4 | 4 / 12 | 3 / 14 |
+| 42 | refined (name-aware + DOB mismatch) | 0.9996 | 0.8659 | 2,226 | 642 | 2 | 1 / 12 | 1 / 14 |
+| 42 | refined + missing-DOB guard | 0.9998 | 0.8387 | 2,937 | 506 | 1 | 0 / 12 | 0 / 14 |
+| 7 | original (no mismatch rule) | 0.9985 | 0.8897 | 1,640 | 737 | 11 | 17 / 17 | 11 / 13 |
+| 7 | strict (any other-ID mismatch) | 0.9997 | 0.7390 | 4,982 | 0 | 3 | 3 / 17 | 3 / 13 |
+| 7 | refined (name-aware + DOB mismatch) | 0.9998 | 0.8731 | 2,187 | 632 | 1 | 1 / 17 | 1 / 13 |
+| 7 | refined + missing-DOB guard | 1.0000 | 0.8444 | 2,885 | 514 | 0 | 0 / 17 | 0 / 13 |
+| 1234 | original (no mismatch rule) | 0.9975 | 0.8869 | 1,682 | 738 | 23 | 28 / 28 | 23 / 29 |
+| 1234 | strict (any other-ID mismatch) | 0.9989 | 0.7404 | 4,935 | 0 | 7 | 7 / 28 | 7 / 29 |
+| 1234 | refined (name-aware + DOB mismatch) | 0.9998 | 0.8695 | 2,194 | 658 | 1 | 1 / 28 | 1 / 29 |
+| 1234 | refined + missing-DOB guard | 0.9998 | 0.8439 | 2,885 | 523 | 1 | 1 / 28 | 1 / 29 |
+| 2026 | original (no mismatch rule) | 0.9973 | 0.8833 | 1,671 | 742 | 23 | 31 / 31 | 23 / 25 |
+| 2026 | strict (any other-ID mismatch) | 0.9987 | 0.7395 | 4,948 | 0 | 6 | 8 / 31 | 6 / 25 |
+| 2026 | refined (name-aware + DOB mismatch) | 0.9999 | 0.8666 | 2,198 | 662 | 1 | 1 / 31 | 1 / 25 |
+| 2026 | refined + missing-DOB guard | 1.0000 | 0.8413 | 2,885 | 532 | 0 | 0 / 31 | 0 / 25 |
+| 99 | original (no mismatch rule) | 0.9991 | 0.8928 | 1,610 | 742 | 8 | 11 / 11 | 8 / 12 |
+| 99 | strict (any other-ID mismatch) | 0.9998 | 0.7379 | 4,993 | 0 | 2 | 2 / 11 | 2 / 12 |
+| 99 | refined (name-aware + DOB mismatch) | 0.9997 | 0.8759 | 2,132 | 658 | 1 | 2 / 11 | 1 / 12 |
+| 99 | refined + missing-DOB guard | 1.0000 | 0.8484 | 2,838 | 525 | 0 | 0 / 11 | 0 / 12 |
+| 31337 | original (no mismatch rule) | 0.9983 | 0.8875 | 1,718 | 740 | 17 | 19 / 19 | 17 / 23 |
+| 31337 | strict (any other-ID mismatch) | 0.9993 | 0.7365 | 5,081 | 0 | 6 | 6 / 19 | 6 / 23 |
+| 31337 | refined (name-aware + DOB mismatch) | 1.0000 | 0.8680 | 2,312 | 644 | 0 | 0 / 19 | 0 / 23 |
+| 31337 | refined + missing-DOB guard | 1.0000 | 0.8421 | 2,982 | 520 | 0 | 0 / 19 | 0 / 23 |
+<!-- policies:end -->
+
 ## Pipeline
 
 | Seed | Records | Candidate pairs | MATCH | REVIEW | NO_MATCH | Clusters | Records merged away | Components split | Runtime |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 42 | 50,000 | 17,160 | 11,723 | 2,226 | 3,211 | 39,948 | 10,052 | 545 | 4.5s |
-| 7 | 50,000 | 17,121 | 11,730 | 2,187 | 3,204 | 39,928 | 10,072 | 547 | 4.6s |
-| 1234 | 50,000 | 16,963 | 11,731 | 2,194 | 3,038 | 39,948 | 10,052 | 561 | 4.6s |
-| 2026 (held out) | 50,000 | 16,981 | 11,697 | 2,198 | 3,086 | 39,931 | 10,069 | 555 | 4.6s |
-| 99 (held out) | 50,000 | 17,004 | 11,869 | 2,132 | 3,003 | 39,845 | 10,155 | 560 | 4.6s |
-| 31337 (held out) | 50,000 | 17,246 | 11,759 | 2,312 | 3,175 | 39,943 | 10,057 | 543 | 4.6s |
+| 42 | 50,000 | 17,160 | 11,723 | 2,226 | 3,211 | 39,948 | 10,052 | 545 | 4.8s |
+| 7 | 50,000 | 17,121 | 11,730 | 2,187 | 3,204 | 39,928 | 10,072 | 547 | 4.8s |
+| 1234 | 50,000 | 16,963 | 11,731 | 2,194 | 3,038 | 39,948 | 10,052 | 561 | 4.8s |
+| 2026 (held out) | 50,000 | 16,981 | 11,697 | 2,198 | 3,086 | 39,931 | 10,069 | 555 | 4.8s |
+| 99 (held out) | 50,000 | 17,004 | 11,869 | 2,132 | 3,003 | 39,845 | 10,155 | 560 | 4.8s |
+| 31337 (held out) | 50,000 | 17,246 | 11,759 | 2,312 | 3,175 | 39,943 | 10,057 | 543 | 4.8s |
 
 Runtime is block + normalize + score + cluster, in-process (no golden records or file output).
 
@@ -161,55 +207,10 @@ An exact email/phone match auto-merges only when the first names agree at this t
 | 31337 (held out) | 0.90 | 0 / 94 | 894 / 12,499 (7.15%) | 0 | 1.0000 | 0.8550 |
 | 31337 (held out) | 0.95 | 0 / 94 | 1,262 / 12,499 (10.10%) | 0 | 1.0000 | 0.8240 |
 
-## Exact-ID policy comparison
-
-_Written by `make compare` (`eval/compare_policies.py`)._
-
-<!-- policies:start -->
-Same data for every policy (seeds 42, 7, 1234, 2026, 99, 31337). Only pairs that reach the exact-ID branch with agreeing first names are re-decided. Shipped policy: **refined (name-aware + DOB mismatch)** (reproduces `score_pair` exactly).
-
-Mean over all seeds (Jr./Sr. and mixed clusters summed):
-
-| Policy | Precision | Ordinary recall | REVIEW queue | drift_chain merged | Mixed clusters | Jr./Sr. pairs MATCHed |
-|---|---:|---:|---:|---:|---:|---:|
-| original (no mismatch rule) | 0.9982 | 0.8876 | 1,662 | 739 / 2,250 | 92 | 118 / 118 |
-| strict (any other-ID mismatch) | 0.9993 | 0.7379 | 4,990 | 0 / 2,250 | 28 | 30 / 118 |
-| **refined (name-aware + DOB mismatch)** | 0.9998 | 0.8698 | 2,208 | 649 / 2,250 | 6 | 6 / 118 |
-| refined + missing-DOB guard | 0.9999 | 0.8431 | 2,902 | 520 / 2,250 | 2 | 1 / 118 |
-
-Per seed:
-
-| Seed | Policy | Precision | Ordinary recall | REVIEW | drift_chain merged | Mixed | Jr./Sr. MATCHed | Children merged |
-|---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 42 | original (no mismatch rule) | 0.9988 | 0.8855 | 1,649 | 737 | 10 | 12 / 12 | 9 / 14 |
-| 42 | strict (any other-ID mismatch) | 0.9992 | 0.7340 | 4,999 | 0 | 4 | 4 / 12 | 3 / 14 |
-| 42 | refined (name-aware + DOB mismatch) | 0.9996 | 0.8659 | 2,226 | 642 | 2 | 1 / 12 | 1 / 14 |
-| 42 | refined + missing-DOB guard | 0.9998 | 0.8387 | 2,937 | 506 | 1 | 0 / 12 | 0 / 14 |
-| 7 | original (no mismatch rule) | 0.9985 | 0.8897 | 1,640 | 737 | 11 | 17 / 17 | 11 / 13 |
-| 7 | strict (any other-ID mismatch) | 0.9997 | 0.7390 | 4,982 | 0 | 3 | 3 / 17 | 3 / 13 |
-| 7 | refined (name-aware + DOB mismatch) | 0.9998 | 0.8731 | 2,187 | 632 | 1 | 1 / 17 | 1 / 13 |
-| 7 | refined + missing-DOB guard | 1.0000 | 0.8444 | 2,885 | 514 | 0 | 0 / 17 | 0 / 13 |
-| 1234 | original (no mismatch rule) | 0.9975 | 0.8869 | 1,682 | 738 | 23 | 28 / 28 | 23 / 29 |
-| 1234 | strict (any other-ID mismatch) | 0.9989 | 0.7404 | 4,935 | 0 | 7 | 7 / 28 | 7 / 29 |
-| 1234 | refined (name-aware + DOB mismatch) | 0.9998 | 0.8695 | 2,194 | 658 | 1 | 1 / 28 | 1 / 29 |
-| 1234 | refined + missing-DOB guard | 0.9998 | 0.8439 | 2,885 | 523 | 1 | 1 / 28 | 1 / 29 |
-| 2026 | original (no mismatch rule) | 0.9973 | 0.8833 | 1,671 | 742 | 23 | 31 / 31 | 23 / 25 |
-| 2026 | strict (any other-ID mismatch) | 0.9987 | 0.7395 | 4,948 | 0 | 6 | 8 / 31 | 6 / 25 |
-| 2026 | refined (name-aware + DOB mismatch) | 0.9999 | 0.8666 | 2,198 | 662 | 1 | 1 / 31 | 1 / 25 |
-| 2026 | refined + missing-DOB guard | 1.0000 | 0.8413 | 2,885 | 532 | 0 | 0 / 31 | 0 / 25 |
-| 99 | original (no mismatch rule) | 0.9991 | 0.8928 | 1,610 | 742 | 8 | 11 / 11 | 8 / 12 |
-| 99 | strict (any other-ID mismatch) | 0.9998 | 0.7379 | 4,993 | 0 | 2 | 2 / 11 | 2 / 12 |
-| 99 | refined (name-aware + DOB mismatch) | 0.9997 | 0.8759 | 2,132 | 658 | 1 | 2 / 11 | 1 / 12 |
-| 99 | refined + missing-DOB guard | 1.0000 | 0.8484 | 2,838 | 525 | 0 | 0 / 11 | 0 / 12 |
-| 31337 | original (no mismatch rule) | 0.9983 | 0.8875 | 1,718 | 740 | 17 | 19 / 19 | 17 / 23 |
-| 31337 | strict (any other-ID mismatch) | 0.9993 | 0.7365 | 5,081 | 0 | 6 | 6 / 19 | 6 / 23 |
-| 31337 | refined (name-aware + DOB mismatch) | 1.0000 | 0.8680 | 2,312 | 644 | 0 | 0 / 19 | 0 / 23 |
-| 31337 | refined + missing-DOB guard | 1.0000 | 0.8421 | 2,982 | 520 | 0 | 0 / 19 | 0 / 23 |
-<!-- policies:end -->
-
 ## Known limitations
 
 - **Synthetic birth dates are never corrupted.** The generator only drops a DOB (about 20% of duplicates), never mistypes or reformats it beyond what the normalizer parses, so the DOB guard (`exact_id_dob_mismatch`) sends no true duplicate to REVIEW here. On real data, DOB typos would turn some true duplicates into REVIEW pairs: its recall cost is likely understated.
+- **Households with similar first names.** A shared household phone or email plus first names that clear `min_first_name_similarity` (0.80 Jaro-Winkler, e.g. Margaret / Maria) MATCHes when no second identifier is present to contradict it. These are the wrong-entity pairs that do not involve a Jr./Sr.
 - **hard_dup pairs are never merged by design** (they differ on both email and phone), and **drift_chain recall is capped at 1/3** by the conflict check.
 <!-- dob-gap:start -->
 - **Missing-DOB gap (not closed).** With identical first names and a birth date missing on either side, an exact email/phone match MATCHes even when the other identifier differs, so a same-name parent and child (Jr./Sr.) can still merge. Measured over 6 seeds: refined MATCHes 6 of 118 Jr./Sr. pairs; the missing-DOB guard (identical names, other identifier different, a DOB missing -> REVIEW) brings that to 1 at a cost of 2.67 points of mean ordinary recall (adoption limit: < 0.5 points). The guard was not adopted.

@@ -15,7 +15,7 @@ eval:
 # Original / strict / refined / refined + missing-DOB guard exact-ID policies on
 # six seeds; fills the policy comparison and DOB-gap blocks of docs/results.md.
 compare:
-	uv run python eval/compare_policies.py
+	uv run python eval/compare_policies.py --readme README.md
 
 merge-report:
 	uv run python eval/merge_report.py --out out --truth data/truth.csv

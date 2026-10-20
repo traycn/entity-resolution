@@ -179,4 +179,5 @@ def test_same_name_outcome_counts_jr_sr_pairs(tmp_path):
     assert outcome.rules == {"REVIEW/exact_id_dob_mismatch": 1}
     assert outcome.merged == 0
     # Had they been merged, the child would count as merged.
-    assert ev.same_name_outcome(prep, results, [["R1", "R2"]], truth).merged == 1
+    merged = ev.same_name_outcome(prep, results, [["R1", "R2"]], truth)
+    assert (merged.merged, merged.wrong_pairs) == (1, 1)
