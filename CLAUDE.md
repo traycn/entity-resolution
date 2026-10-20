@@ -27,7 +27,7 @@ tests/
 ## Milestones
 
 ### M1 — Synthetic data generator
-- `data/generate.py --n 50000 --dup-rate 0.25 --seed 42` writes `data/sources/{crm,ads,web}.csv` and `data/truth.csv` (`record_id, entity_id`).
+- `data/generate.py --n 50000 --dup-rate 0.25 --seed 42` writes `data/sources/{crm,ads,web}.csv` and `data/truth.csv` (`record_id, entity_id, dup_type`).
 - Duplicates are corrupted realistically: typos, nicknames (Bob/Robert), swapped first/last, phone formats, `gmail` dot/plus variants, address abbreviations (St/Street), missing fields.
 - **Accept:** same seed → identical output; truth file covers every record.
 
@@ -50,6 +50,7 @@ tests/
 ### M6 — Evaluation
 - `eval/evaluate.py` prints pairwise and cluster-level precision/recall/F1, plus a threshold sweep chart (PNG).
 - **Accept:** precision ≥ 0.99 at the chosen threshold. Numbers go into README Result.
+- Report `hard_dup` pairs separately. `truth.csv` has a `dup_type` column (`original` / `dup` / `hard_dup`); ~2% of duplicates are `hard_dup`, i.e. they differ on BOTH email and phone. The safety rule is expected to leave them `NO_MATCH` or `REVIEW`, so they are the known recall cost of the safety rule, not a bug. Print recall with and without them (e.g. "recall on ordinary duplicates" vs "hard_dup pairs found / total") and never count a merge of them as a win.
 
 ### M7 — Review UI
 - FastAPI endpoint serving REVIEW pairs; Vite + React + Tailwind page showing side-by-side records with field-level scores and Approve / Reject buttons. Decisions write to `data/review_decisions.csv`.
