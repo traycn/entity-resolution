@@ -43,6 +43,9 @@ tests/
 ### M4 — Scoring and decisions
 - Weighted field similarity (rapidfuzz) + hard rules. Output one of `MATCH`, `REVIEW`, `NO_MATCH` with thresholds in `config.toml`.
 - **Accept:** safety-rule test passes; every decision has an explanation dict.
+- **Auto-merge policy** (`config.toml` `[policy]`): `MATCH` only on an exact normalized email or phone match whose first names agree (Jaro-Winkler ≥ `min_first_name_similarity` = 0.80, nickname-normalized, swapped first/last allowed); below that → `REVIEW`, `rule="shared_identifier"`. The weighted score never auto-merges (`allow_weighted_match = false`); it only picks `REVIEW` vs `NO_MATCH`. Why: name + address can't tell a person from a same-named family member, and a look-alike email is a different identifier.
+  - Numbers (seed 42, 50k records, 16,787 candidate pairs): 12,544 MATCH, all true duplicates; 0 of 270 hard_dup pairs and 0 of 2,381 non-duplicates MATCHed; 1,792 REVIEW.
+  - First-name sweep over 69 shared-identifier household pairs (generator `P_SHARED_ID = 0.05`) and 12,721 true exact-ID duplicates: 0.60 → 10 households merged, 0.57% of duplicates to REVIEW; 0.70 → 2, 1.05%; **0.80 → 0, 1.39%**; 0.90 → 0, 2.96%.
 
 ### M5 — Clustering and merge
 - Connected components on MATCH edges, but split any cluster that contains a conflicting-identifier pair. Survivorship rules: most recent non-null, prefer verified source.

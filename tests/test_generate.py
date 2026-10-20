@@ -127,6 +127,26 @@ def test_duplicates_are_corrupted_in_each_documented_way(dataset):
     )
 
 
+def test_shared_id_households_reuse_host_identifier(monkeypatch):
+    """Hard negatives: a family member with a different first name who shares the
+    household phone or email (forced on for every household here)."""
+    monkeypatch.setattr(gen, "P_SHARED_ID", 1.0)
+    g = gen.Generator(seed=3)
+    host = g.make_entity(1)
+    kinds = set()
+    for i in range(2, 40):
+        member = g.make_entity(i, household_of=host)
+        assert member.last == host.last and member.street == host.street
+        assert member.first.lower() != host.first.lower()
+        shares_phone, shares_email = (
+            member.phone == host.phone,
+            member.email == host.email,
+        )
+        assert shares_phone != shares_email  # exactly one identifier is shared
+        kinds.add("phone" if shares_phone else "email")
+    assert kinds == {"phone", "email"}
+
+
 def test_rejects_bad_args():
     with pytest.raises(ValueError):
         gen.generate(0, 0.25, 1)

@@ -19,7 +19,9 @@ conflicting-identifier rule. "hard_dup" records deliberately break this: they ca
 a new email AND a new phone (both always present), so the safety rule must refuse
 to merge them. They are the known recall cost of that rule and are expected to end
 up NO_MATCH or REVIEW. Households (distinct people sharing a surname and address)
-are generated as hard negatives.
+are generated as hard negatives; about 5% of them also share the household phone or
+email with a family member who has a different first name, so an exact identifier
+match alone is not proof of the same person.
 """
 
 from __future__ import annotations
@@ -107,6 +109,7 @@ P_DOB_MISSING = 0.20
 P_CASE_NOISE = 0.15
 P_HARD_DUP = 0.02  # share of duplicates that differ on BOTH email and phone
 P_HOUSEHOLD = 0.03  # share of entities that are a second person at an existing address
+P_SHARED_ID = 0.05  # share of household members that reuse the host's phone or email
 
 
 def _weighted(rng: random.Random, pairs: list[tuple[str, float]]) -> str:
@@ -219,10 +222,15 @@ class Generator:
 
     def make_entity(self, idx: int, household_of: Entity | None = None) -> Entity:
         first, last = self._person_name()
+        shared: str | None = None  # "phone" / "email" reused from the household host
         if household_of is not None:
             last = household_of.last
             street, city, state, zip_ = (household_of.street, household_of.city,
                                          household_of.state, household_of.zip)  # fmt: skip
+            if self.rng.random() < P_SHARED_ID:
+                shared = self.rng.choice(["phone", "email"])
+                while first.lower() == household_of.first.lower():
+                    first, _ = self._person_name()
         else:
             street = self.fake.street_address()
             city, state, zip_ = (
@@ -231,9 +239,18 @@ class Generator:
                 self.fake.zipcode(),
             )
         dob = date(1940, 1, 1) + timedelta(days=self.rng.randrange(0, 365 * 65))
+        email = (
+            household_of.email
+            if household_of is not None and shared == "email"
+            else self._unique_email(first, last)
+        )
+        phone = (
+            household_of.phone
+            if household_of is not None and shared == "phone"
+            else self._unique_phone()
+        )
         return Entity(
-            f"E{idx:06d}", first, last, self._unique_email(first, last), self._unique_phone(),
-            street, city, state, zip_, dob,
+            f"E{idx:06d}", first, last, email, phone, street, city, state, zip_, dob,
         )  # fmt: skip
 
     # ---- records --------------------------------------------------------------------

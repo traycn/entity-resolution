@@ -1,0 +1,40 @@
+# Scoring configuration (Milestone 4). Read by resolver.scoring.load_config.
+# Override the path with the RESOLVER_CONFIG environment variable.
+
+[policy]
+# Auto-merge policy: a pair is MATCHed (merged without a human) ONLY when the two
+# records share an exact normalized email or phone AND their first names agree
+# (see min_first_name_similarity). The weighted fuzzy score never auto-merges on its
+# own: it only decides between REVIEW (human queue) and NO_MATCH.
+#
+# Why: fuzzy agreement on name + address cannot tell a person from a same-named
+# family member at the same address, and a look-alike email is a *different*
+# identifier. Measured on the 50k synthetic set, allowing weighted MATCH bought
+# ~500 extra auto-merges at the cost of merging hard_dup pairs and household members.
+#
+# Set to true to let a weighted score >= thresholds.match auto-merge (subject to
+# min_match_weight and the differing-identifier cap).
+allow_weighted_match = false
+
+[thresholds]
+# Weighted score >= match -> MATCH (only if allow_weighted_match), >= review -> REVIEW,
+# otherwise NO_MATCH.
+match = 0.92
+review = 0.75
+# A weighted MATCH also needs at least this much (pre-normalization) weight of fields
+# present on both records, else it is capped at REVIEW. 0.50 > name + address (0.40).
+min_match_weight = 0.50
+# An exact email/phone match only auto-merges when the first names' Jaro-Winkler
+# similarity (nickname-normalized, swapped first/last allowed) reaches this value;
+# below it the pair is a shared household identifier -> REVIEW.
+# Swept on the 50k set (69 shared-id household pairs, 12,721 true exact-id dups):
+#   0.60 -> 10 households merged; 0.70 -> 2 (joseph/stephanie 0.70, angel/gabriel 0.71);
+#   0.80 -> 0, with 1.39% of true exact-id dups sent to REVIEW; 0.90 -> 0, 2.96%.
+min_first_name_similarity = 0.80
+
+[weights]
+# Missing fields are excluded and the remaining weights re-normalized.
+email = 0.35
+phone = 0.25
+name = 0.25
+address = 0.15
