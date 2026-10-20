@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class Decision(str, Enum):
@@ -36,12 +37,12 @@ FIELD_WEIGHTS: dict[str, float] = {
 }
 
 
-def has_conflicting_identifiers(left: dict, right: dict) -> bool:
+def has_conflicting_identifiers(left: dict[str, Any], right: dict[str, Any]) -> bool:
     """SAFETY RULE: both emails present and different AND both phones present and different."""
     raise NotImplementedError
 
 
-def score_pair(left: dict, right: dict, thresholds: Thresholds) -> PairResult:
+def score_pair(left: dict[str, Any], right: dict[str, Any], thresholds: Thresholds) -> PairResult:
     """Compute weighted similarity, apply hard rules, return an explainable result.
 
     Order of evaluation:

@@ -1,4 +1,4 @@
-.PHONY: data resolve eval review test lint all
+.PHONY: data resolve eval blocking-report review test lint all
 
 data:
 	uv run python data/generate.py --n 50000 --dup-rate 0.25 --seed 42
@@ -8,6 +8,9 @@ resolve:
 
 eval:
 	uv run python eval/evaluate.py --pred out/clusters.csv --truth data/truth.csv
+
+blocking-report:
+	uv run python eval/blocking_report.py
 
 review:
 	uv run uvicorn resolver.review_api:app --reload & cd review-ui && npm run dev
