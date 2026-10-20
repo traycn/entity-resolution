@@ -4,8 +4,16 @@ from resolver.scoring import Decision, Thresholds, score_pair
 
 
 def test_conflicting_identifiers_never_merge():
-    left = {"name": "maria garcia", "email": "maria.g@example.com", "phone": "+13105550100"}
-    right = {"name": "maria garcia", "email": "mgarcia@example.org", "phone": "+12135550199"}
+    left = {
+        "name": "maria garcia",
+        "email": "maria.g@example.com",
+        "phone": "+13105550100",
+    }
+    right = {
+        "name": "maria garcia",
+        "email": "mgarcia@example.org",
+        "phone": "+12135550199",
+    }
     result = score_pair(left, right, Thresholds())
     assert result.decision is Decision.NO_MATCH
     assert result.rule == "conflict"

@@ -34,6 +34,7 @@ tests/
 ### M2 — Normalizers
 - Implement every function in `normalize.py` (names, email, phone → E.164, address, dates).
 - **Accept:** table-driven tests for each normalizer, ≥ 15 cases each, including Unicode names.
+- Known assumption: slash/dash dates are parsed month-first (US); two-digit years use a fixed pivot (>30 → 19xx).
 
 ### M3 — Blocking
 - Generate candidate pairs using multiple blocking keys (email local-part, phone last 7, name soundex + zip). Union the blocks.
