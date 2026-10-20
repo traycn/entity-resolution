@@ -10,3 +10,9 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+
+  # Review UI: review-ui/package.json + package-lock.json
+  - package-ecosystem: "npm"
+    directory: "/review-ui"
+    schedule:
+      interval: "monthly"

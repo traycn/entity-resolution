@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  python:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -18,3 +18,34 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy --strict src eval
       - run: uv run pytest -q
+
+  review-ui:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: review-ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: review-ui/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+
+  # Definition of done: `make all` from a clean clone regenerates data, resolves,
+  # evaluates and compares policies, and the committed results match. Runtime
+  # figures and the chart's pixels vary by machine, so they are not compared.
+  reproduce:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: make all
+      - name: Committed results match a fresh run
+        run: scripts/check_results_reproduce.sh
