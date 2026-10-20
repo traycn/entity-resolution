@@ -74,6 +74,8 @@ class SplitInfo:
     conflicts: list[Pair]  # conflicting pairs found inside the component
     rejected_edges: list[Pair]  # MATCH edges skipped to keep the conflicts apart
     clusters: list[list[str]]
+    # Explanation of every MATCH edge in the component: the evidence that linked it.
+    edges: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -169,7 +171,11 @@ def cluster_matches(
             kept[pair] = edges[pair]
         parts = dsu.groups()
         clusters.extend(parts)
-        splits.append(SplitInfo(component, conflicts, rejected, parts))
+        evidence = [
+            {"left_id": a, "right_id": b, **edges[(a, b)].explanation()}
+            for a, b in sorted(comp_edges)
+        ]
+        splits.append(SplitInfo(component, conflicts, rejected, parts, evidence))
 
     clusters.sort()
     return Clustering(clusters=clusters, edges=kept, splits=splits)

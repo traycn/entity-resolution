@@ -7,3 +7,5 @@ out/
 data/sources/
 data/truth.csv
 node_modules/
+data/review_decisions.csv
+review-ui/dist/

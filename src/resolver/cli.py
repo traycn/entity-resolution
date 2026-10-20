@@ -11,6 +11,7 @@ import typer
 
 from resolver.blocking import add_blocking_columns, candidate_pairs, load_sources
 from resolver.merge import merge, write_outputs
+from resolver.review import write_review_pairs
 from resolver.scoring import Thresholds, normalize_record, score_pair
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -38,6 +39,7 @@ def run(
     results = [score_pair(records[a], records[b], thresholds) for a, b in pairs]
     result = merge(rows, records, results)
     write_outputs(out, result)
+    write_review_pairs(out / "review.jsonl", results)
     elapsed = time.perf_counter() - t0
 
     decisions = Counter(r.decision.value for r in results)
@@ -51,5 +53,7 @@ def run(
         f"{df.height - len(clusters):,} records merged away, "
         f"{len(result.clustering.splits):,} components split by the conflict check"
     )
-    typer.echo(f"wrote {out}/: clusters.csv golden.csv audit.jsonl splits.jsonl")
+    typer.echo(
+        f"wrote {out}/: clusters.csv golden.csv audit.jsonl splits.jsonl review.jsonl"
+    )
     typer.echo(f"runtime: {elapsed:.1f}s")

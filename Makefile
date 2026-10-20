@@ -23,8 +23,14 @@ merge-report:
 blocking-report:
 	uv run python eval/blocking_report.py
 
+# Review UI: API on 127.0.0.1:8000, page on http://127.0.0.1:5173 (proxies /api).
+# Builds data + out/ if missing; Ctrl-C stops both servers.
 review:
-	uv run uvicorn resolver.review_api:app --reload & cd review-ui && npm run dev
+	@test -f out/review.jsonl || $(MAKE) data resolve
+	@test -d review-ui/node_modules || (cd review-ui && npm ci --no-audit --no-fund)
+	@trap 'kill 0' INT TERM EXIT; \
+	uv run uvicorn resolver.review_api:app --host 127.0.0.1 --port 8000 & \
+	cd review-ui && npm run dev
 
 test:
 	uv run pytest -q

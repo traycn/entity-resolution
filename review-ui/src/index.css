@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+  }
+  /* One visible focus style for every keyboard-focusable element. */
+  :focus-visible {
+    outline: 3px solid var(--color-blue-600);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :focus-visible {
+      outline-color: var(--color-blue-400);
+    }
+  }
+  kbd {
+    @apply rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-xs text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200;
+  }
+}
