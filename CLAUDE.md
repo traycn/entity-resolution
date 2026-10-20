@@ -50,6 +50,11 @@ tests/
 ### M5 — Clustering and merge
 - Connected components on MATCH edges, but split any cluster that contains a conflicting-identifier pair. Survivorship rules: most recent non-null, prefer verified source.
 - **Accept:** golden-record output + an audit log of every merge (reversible).
+- **Survivorship** (`merge.build_golden`):
+  - Verified beats recency: records rank by `email_verified`, then most recent `updated_at`, then record id. The verified flag is the only verification signal in the sources, so it ranks the whole record, not just the email.
+  - Field groups stay together: name (first + last), email (+ verified flag), phone, address (street + city + state + zip), dob are each taken whole from one record, so a golden address never mixes one record's street with another's zip. Each field records its source `record_id`.
+  - Email is stored as written (the normalizer only validates it). The normalized form strips gmail dots/plus tags; it is a matching key, not the customer's address. Phone is stored as E.164 and dob as ISO. A value its normalizer rejects counts as missing.
+- Identity drift: the generator gives ~2% of entities a 3-record `drift_chain` (phone changes 1→2, email changes 2→3), so records 1 and 3 conflict and are linked only through record 2. The conflict check must split these; no cluster may contain more than one true entity.
 
 ### M6 — Evaluation
 - `eval/evaluate.py` prints pairwise and cluster-level precision/recall/F1, plus a threshold sweep chart (PNG).

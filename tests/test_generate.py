@@ -77,7 +77,7 @@ def test_only_hard_dups_conflict_on_hard_identifiers(dataset):
             for b in recs[i + 1 :]:
                 if _conflicts(a, b):
                     pair = (kinds[a["record_id"]], kinds[b["record_id"]])
-                    assert "hard_dup" in pair, pair
+                    assert "hard_dup" in pair or pair == ("drift_chain",) * 2, pair
 
 
 def test_hard_dups_are_about_two_percent_and_really_conflict(dataset):
@@ -86,13 +86,40 @@ def test_hard_dups_are_about_two_percent_and_really_conflict(dataset):
     n_dups = sum(k != "original" for _, _, k in truth)
     hard = [(rid, eid) for rid, eid, k in truth if k == "hard_dup"]
     assert 0.005 < len(hard) / n_dups < 0.04
-    assert {k for _, _, k in truth} == {"original", "dup", "hard_dup"}
+    assert {k for _, _, k in truth} == {"original", "dup", "hard_dup", "drift_chain"}
     originals = {eid: rows[rid] for rid, eid, k in truth if k == "original"}
     for rid, eid in hard:
         assert rows[rid]["email"] and rows[rid]["phone"]
         o = originals[eid]
         if o["email"] and o["phone"]:
             assert _conflicts(rows[rid], o)
+
+
+def _same_phone(a, b):
+    return re.sub(r"\D", "", a["phone"])[-10:] == re.sub(r"\D", "", b["phone"])[-10:]
+
+
+def test_drift_chains_link_ends_only_through_the_middle(dataset):
+    by_source, truth = dataset
+    rows = {r["record_id"]: r for rs in by_source.values() for r in rs}
+    chains = defaultdict(list)
+    for rid, eid, kind in truth:
+        if kind == "drift_chain":
+            chains[eid].append(rows[rid])
+    n_entities = len({e for _, e, _ in truth})
+    assert 0.01 < len(chains) / n_entities < 0.03
+    other_kinds = {k for _, e, k in truth if e in chains and k != "drift_chain"}
+    assert other_kinds == set()  # exactly 3 records, all labelled drift_chain
+    for recs in chains.values():
+        assert len(recs) == 3
+        assert all(r["email"] and r["phone"] for r in recs)
+        first, middle, last = sorted(recs, key=lambda r: r["updated_at"])
+        assert first["updated_at"] < middle["updated_at"] < last["updated_at"]
+        assert gen._gmail_key(first["email"]) == gen._gmail_key(middle["email"])
+        assert not _same_phone(first, middle)  # phone changed 1 -> 2
+        assert _same_phone(middle, last)
+        assert gen._gmail_key(middle["email"]) != gen._gmail_key(last["email"])
+        assert _conflicts(first, last)  # 1 and 3 share nothing
 
 
 def test_duplicates_are_corrupted_in_each_documented_way(dataset):

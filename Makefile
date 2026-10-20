@@ -6,8 +6,10 @@ data:
 resolve:
 	uv run resolver run --sources data/sources --out out/
 
+# Until M6 adds eval/evaluate.py (pairwise/cluster P/R/F1), eval reports on the
+# merge outputs written by `make resolve`.
 eval:
-	uv run python eval/evaluate.py --pred out/clusters.csv --truth data/truth.csv
+	uv run python eval/merge_report.py --out out --truth data/truth.csv
 
 blocking-report:
 	uv run python eval/blocking_report.py

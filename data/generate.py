@@ -11,7 +11,8 @@ over n * (1 - dup_rate) real-world entities). Output is a pure function of the
 arguments: the same seed gives byte-identical files.
 
 `dup_type` is "original" (the first record of an entity), "dup" (an ordinary
-corrupted duplicate) or "hard_dup" (about 2% of duplicates).
+corrupted duplicate), "hard_dup" (about 2% of duplicates) or "drift_chain" (all three
+records of an identity-drift entity, see below).
 
 Safety invariant: an ordinary duplicate never carries a *different* email AND a
 *different* phone from its entity, since that would trip the project's
@@ -22,6 +23,13 @@ up NO_MATCH or REVIEW. Households (distinct people sharing a surname and address
 are generated as hard negatives; about 5% of them also share the household phone or
 email with a family member who has a different first name, so an exact identifier
 match alone is not proof of the same person.
+
+Identity drift: about 2% of entities get exactly three records, in time order, where
+the phone changes between records 1 -> 2 and the email changes between 2 -> 3 (both
+always present). Neighbouring records share an identifier, but records 1 and 3 share
+neither, so they conflict and the clustering's conflict check must keep them apart
+even though they are only linked through record 2. Every record of such an entity is
+labelled "drift_chain".
 """
 
 from __future__ import annotations
@@ -110,6 +118,8 @@ P_CASE_NOISE = 0.15
 P_HARD_DUP = 0.02  # share of duplicates that differ on BOTH email and phone
 P_HOUSEHOLD = 0.03  # share of entities that are a second person at an existing address
 P_SHARED_ID = 0.05  # share of household members that reuse the host's phone or email
+P_DRIFT = 0.02  # share of entities with a 3-record phone-then-email drift chain
+DRIFT_WINDOW_DAYS = 300  # each chain step is dated in its own window, oldest first
 
 
 def _weighted(rng: random.Random, pairs: list[tuple[str, float]]) -> str:
@@ -254,6 +264,27 @@ class Generator:
         )  # fmt: skip
 
     # ---- records --------------------------------------------------------------------
+
+    def make_drift_record(self, rid: str, e: Entity, source: str, step: int,
+                          ref_updated: date) -> dict[str, str]:  # fmt: skip
+        """Record `step` (0, 1, 2) of e's drift chain: step 1 has a new phone, step 2
+        additionally a new email. Email and phone are always present."""
+        row = self.make_record(
+            rid, e, source, duplicate=step > 0, ref_updated=ref_updated
+        )
+        phone, email = e.phone, e.email
+        if step >= 1:
+            phone = self.alt_value.setdefault(f"{e.eid}:phone", self._unique_phone())
+        if step == 2:
+            email = self.alt_value.setdefault(
+                f"{e.eid}:email", self._unique_email(e.first, e.last)
+            )
+        newest = ref_updated - timedelta(days=(2 - step) * DRIFT_WINDOW_DAYS)
+        updated = newest - timedelta(days=self.rng.randrange(0, DRIFT_WINDOW_DAYS))
+        row["email"] = email
+        row["phone"] = self._format_phone(phone, source)
+        row["updated_at"] = updated.isoformat()
+        return row
 
     def _format_phone(self, e164: str, source: str) -> str:
         a, b, c = e164[2:5], e164[5:8], e164[8:]
@@ -402,29 +433,39 @@ def generate(
         host = rng.choice(entities) if entities and rng.random() < P_HOUSEHOLD else None
         entities.append(g.make_entity(i + 1, household_of=host))
 
-    # (entity, dup_type, source) plan, then shuffled into record-id order.
-    plan: list[tuple[Entity, str, str]] = []
+    # Drift entities take 3 records each: their original plus 2 duplicate slots.
+    n_drift = min(round(n_entities * P_DRIFT), n_dups // 2)
+    drift = {entities[i].eid for i in sorted(rng.sample(range(n_entities), n_drift))}
+    regular = [e for e in entities if e.eid not in drift]
+
+    # (entity, dup_type, source, drift step) plan, then shuffled into record-id order.
+    plan: list[tuple[Entity, str, str, int]] = []
     first_source: dict[str, str] = {}
     for e in entities:
         s = rng.choice(SOURCES)
         first_source[e.eid] = s
-        plan.append((e, "original", s))
-    for _ in range(n_dups):
-        e = rng.choice(entities)
+        if e.eid in drift:
+            plan.append((e, "drift_chain", s, 0))
+            plan.extend((e, "drift_chain", rng.choice(SOURCES), k) for k in (1, 2))
+        else:
+            plan.append((e, "original", s, 0))
+    for _ in range(n_dups - 2 * n_drift):
+        e = rng.choice(regular)
         others = [s for s in SOURCES if s != first_source[e.eid]]
         kind = "hard_dup" if rng.random() < P_HARD_DUP else "dup"
-        plan.append(
-            (e, kind, rng.choice(others) if rng.random() < 0.8 else rng.choice(SOURCES))
-        )
+        source = rng.choice(others) if rng.random() < 0.8 else rng.choice(SOURCES)
+        plan.append((e, kind, source, 0))
     rng.shuffle(plan)
 
     ref = date(2025, 12, 31)
     by_source: dict[str, list[dict[str, str]]] = {s: [] for s in SOURCES}
     truth: list[tuple[str, str, str]] = []
-    for i, (e, kind, source) in enumerate(plan, start=1):
+    for i, (e, kind, source, step) in enumerate(plan, start=1):
         rid = f"R{i:07d}"
-        by_source[source].append(
-            g.make_record(
+        if kind == "drift_chain":
+            row = g.make_drift_record(rid, e, source, step, ref)
+        else:
+            row = g.make_record(
                 rid,
                 e,
                 source,
@@ -432,7 +473,7 @@ def generate(
                 ref_updated=ref,
                 hard=kind == "hard_dup",
             )
-        )
+        by_source[source].append(row)
         truth.append((rid, e.eid, kind))
     return by_source, truth
 
@@ -474,7 +515,8 @@ def main(
     n_entities = len({e for _, e, _ in truth_rows})
     typer.echo(
         f"{len(truth_rows)} records, {n_entities} entities, {len(truth_rows) - n_entities} duplicates "
-        f"({sum(t == 'hard_dup' for _, _, t in truth_rows)} hard_dup)"
+        f"({sum(t == 'hard_dup' for _, _, t in truth_rows)} hard_dup, "
+        f"{sum(t == 'drift_chain' for _, _, t in truth_rows) // 3} drift chains)"
     )
     for s, rows in by_source.items():
         typer.echo(f"  {s}: {len(rows)} -> {out / (s + '.csv')}")
