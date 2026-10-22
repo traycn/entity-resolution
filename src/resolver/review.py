@@ -16,11 +16,13 @@ import json
 import threading
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+from resolver.blocking import Pair
+from resolver.merge import HUMAN_RULE, SplitInfo
 from resolver.normalize import (
     normalize_address,
     normalize_date,
@@ -126,6 +128,8 @@ def describe_pair(explanation: Mapping[str, Any]) -> str:
 
 def describe_edge(explanation: Mapping[str, Any]) -> str:
     """Why one MATCH edge linked two records."""
+    if explanation.get("rule") == HUMAN_RULE:
+        return "Approved by a reviewer"
     first = explanation.get("checks", {}).get("first_name")
     names = f", first names agree ({first:.2f})" if first is not None else ""
     return f"{_ids_phrase(_matched_ids(explanation.get('field_scores', {})))}{names}"
@@ -133,14 +137,18 @@ def describe_edge(explanation: Mapping[str, Any]) -> str:
 
 def describe_split(split: Mapping[str, Any]) -> str:
     n = len(split["component"])
+    parts = len(split["clusters"])
     conflicts: list[list[str]] = split["conflicts"]
+    if not conflicts:  # split only by a reviewer's "different people" decision
+        a, b = split["human_rejected"][0]
+        return f"{n} records linked, but a reviewer kept {a} and {b} apart; split into {parts} clusters"
     a, b = conflicts[0]
     more = (
         f" (+{len(conflicts) - 1} more conflicting pairs)" if len(conflicts) > 1 else ""
     )
     return (
         f"{n} records linked by exact matches, but {a} and {b} differ on both email "
-        f"and phone{more}; split into {len(split['clusters'])} clusters"
+        f"and phone{more}; split into {parts} clusters"
     )
 
 
@@ -330,3 +338,109 @@ def record_decision(
             writer.writerow(row)
         queue.decisions[item_id] = decision
     return row
+
+
+# ------------------------------------------------- applying decisions (M7+)
+
+# Report statuses (decisions_applied.jsonl), see docs/architecture.md:
+#   merged               approved pair now shares a cluster
+#   cut_by_safety_rule   approved pair left apart: joining would merge conflicting IDs
+#   separated            rejected pair was together automatically, now apart
+#   already_apart        rejected pair was never in one cluster; kept apart from now on
+#   split_kept           split confirmed; nothing to change
+#   refused_safety_rule  "should be one entity" would merge conflicting IDs
+#   stale                the item is no longer in this run's review queue
+
+
+def read_decision_rows(path: Path) -> dict[str, dict[str, str]]:
+    """item id -> its latest decision row (the CSV is append-only)."""
+    if not path.exists():
+        return {}
+    latest: dict[str, dict[str, str]] = {}
+    with path.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            if row.get("decision") in ("approve", "reject"):
+                latest[row["item_id"]] = row
+    return latest
+
+
+@dataclass
+class DecisionPlan:
+    """Review decisions turned into clustering inputs, plus a report row per item."""
+
+    human_links: list[PairResult] = field(default_factory=list)
+    cannot_link: list[Pair] = field(default_factory=list)
+    report: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+def plan_decisions(
+    rows: Mapping[str, Mapping[str, str]],
+    results: Iterable[PairResult],
+    splits: Iterable[SplitInfo],
+) -> DecisionPlan:
+    """Check each decision against this run and turn it into a link or constraint.
+
+    A decision only applies to the item it was made on: a pair must still be a
+    REVIEW pair, a split must still have exactly the same members. Anything else
+    (regenerated data, changed config) is reported as stale and ignored.
+    """
+    review = {
+        (r.left_id, r.right_id): r for r in results if r.decision is Decision.REVIEW
+    }
+    components = {tuple(s.component) for s in splits}
+    plan = DecisionPlan()
+    for item_id, row in sorted(rows.items()):
+        ids = tuple(sorted(row["record_ids"].split(";")))
+        status: str = "pending"
+        reason = ""
+        if row["item_type"] == "pair":
+            res = review.get((ids[0], ids[1])) if len(ids) == 2 else None
+            if res is None:
+                status, reason = "stale", "not a REVIEW pair in this run"
+            elif row["outcome"] == "same_entity":
+                plan.human_links.append(
+                    replace(res, decision=Decision.MATCH, rule=HUMAN_RULE)
+                )
+            else:
+                plan.cannot_link.append((ids[0], ids[1]))
+        elif ids not in components:
+            status, reason = "stale", "no split with these members in this run"
+        elif row["outcome"] == "split_correct":
+            status = "split_kept"
+        else:
+            status = "refused_safety_rule"
+            reason = "would merge records whose email and phone both differ"
+        plan.report[item_id] = {
+            "item_id": item_id,
+            "item_type": row["item_type"],
+            "outcome": row["outcome"],
+            "decided_at": row["decided_at"],
+            "record_ids": ";".join(ids),
+            "status": status,
+            "reason": reason,
+        }
+    return plan
+
+
+def finalize_report(
+    plan: DecisionPlan,
+    automatic: Mapping[str, str],
+    reviewed: Mapping[str, str],
+) -> list[dict[str, str]]:
+    """Fill in what each applied pair decision did, from the automatic and reviewed
+    record -> cluster maps."""
+    rows = []
+    for row in plan.report.values():
+        if row["status"] == "pending":
+            a, b = row["record_ids"].split(";")
+            together = reviewed[a] == reviewed[b]
+            if row["outcome"] == "same_entity":
+                row["status"] = "merged" if together else "cut_by_safety_rule"
+                if not together:
+                    row["reason"] = "joining would merge conflicting identifiers"
+            else:
+                row["status"] = (
+                    "separated" if automatic[a] == automatic[b] else "already_apart"
+                )
+        rows.append(row)
+    return rows

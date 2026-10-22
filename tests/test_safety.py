@@ -31,3 +31,26 @@ def test_every_result_is_explainable():
     result = score_pair(left, right, Thresholds())
     assert result.rule
     assert set(result.field_scores) <= {"name", "address", "email", "phone"}
+
+
+def test_review_decisions_never_merge_conflicting_identifiers():
+    # A reviewer's approval is applied as a link, but the conflict check still
+    # keeps records whose email and phone both differ in separate clusters.
+    from resolver.merge import HUMAN_RULE, cluster_matches
+    from resolver.scoring import PairResult
+
+    records = {
+        "A": {
+            "record_id": "A",
+            "email": "maria.g@example.com",
+            "phone": "+13105550100",
+        },
+        "C": {
+            "record_id": "C",
+            "email": "mgarcia@example.org",
+            "phone": "+12135550199",
+        },
+    }
+    approved = PairResult("A", "C", 0.9, Decision.MATCH, rule=HUMAN_RULE)
+    clustering = cluster_matches(records, [], human_links=[approved])
+    assert clustering.clusters == [["A"], ["C"]]

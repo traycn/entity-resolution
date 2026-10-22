@@ -68,7 +68,8 @@ def _clean(value: str | None) -> str | None:
 
 @dataclass
 class SplitInfo:
-    """A MATCH component that the conflict check broke into several clusters."""
+    """A MATCH component broken into several clusters by the conflict check or by a
+    reviewer's "different people" decision."""
 
     component: list[str]
     conflicts: list[Pair]  # conflicting pairs found inside the component
@@ -76,6 +77,7 @@ class SplitInfo:
     clusters: list[list[str]]
     # Explanation of every MATCH edge in the component: the evidence that linked it.
     edges: list[dict[str, Any]] = field(default_factory=list)
+    human_rejected: list[Pair] = field(default_factory=list)  # reviewer cannot-links
 
 
 @dataclass
@@ -117,16 +119,31 @@ def _key(a: str, b: str) -> Pair:
     return (a, b) if a < b else (b, a)
 
 
+HUMAN_RULE = "human_approved"
+
+
 def cluster_matches(
-    records: Mapping[str, NormalizedRecord], results: Iterable[PairResult]
+    records: Mapping[str, NormalizedRecord],
+    results: Iterable[PairResult],
+    *,
+    human_links: Iterable[PairResult] = (),
+    cannot_link: Iterable[Pair] = (),
 ) -> Clustering:
     """Cluster every record in `records` over the MATCH edges in `results`.
 
-    Records without a MATCH edge become singleton clusters.
+    Records without a MATCH edge become singleton clusters. Review decisions, when
+    given, are applied on top: `human_links` (rule HUMAN_RULE) join like MATCH edges
+    and win over automatic edges when a component has to be split; `cannot_link`
+    pairs are kept apart like conflicting identifiers. The conflict check still
+    applies to human links: no decision merges conflicting identifiers.
     """
     edges = {
         _key(r.left_id, r.right_id): r for r in results if r.decision is Decision.MATCH
     }
+    edges.update((_key(r.left_id, r.right_id), r) for r in human_links)
+    human_apart = {_key(a, b) for a, b in cannot_link}
+    for pair in human_apart:
+        edges.pop(pair, None)
     components = _DisjointSet(records)
     for a, b in edges:
         components.union(a, b)
@@ -145,25 +162,30 @@ def cluster_matches(
             for a, b in combinations(component, 2)
             if has_conflicting_identifiers(records[a], records[b])
         ]
-        if not conflicts:
+        apart = [p for p in combinations(component, 2) if p in human_apart]
+        if not conflicts and not apart:
             clusters.append(component)
             kept.update((p, edges[p]) for p in comp_edges)
             continue
 
-        cannot_link: dict[str, set[str]] = defaultdict(set)
-        for a, b in conflicts:
-            cannot_link[a].add(b)
-            cannot_link[b].add(a)
+        keep_apart: dict[str, set[str]] = defaultdict(set)
+        for a, b in conflicts + apart:
+            keep_apart[a].add(b)
+            keep_apart[b].add(a)
         dsu = _DisjointSet(component)
         members = {rid: {rid} for rid in component}
         rejected: list[Pair] = []
-        # Strongest evidence first; ties broken by ids so the result is deterministic.
-        for pair in sorted(comp_edges, key=lambda p: (-edges[p].score, p)):
+        # Reviewer links first, then strongest evidence; ties broken by ids so the
+        # result is deterministic.
+        for pair in sorted(
+            comp_edges,
+            key=lambda p: (edges[p].rule != HUMAN_RULE, -edges[p].score, p),
+        ):
             ra, rb = dsu.find(pair[0]), dsu.find(pair[1])
             if ra == rb:
                 kept[pair] = edges[pair]
                 continue
-            if any(cannot_link[x] & members[rb] for x in members[ra]):
+            if any(keep_apart[x] & members[rb] for x in members[ra]):
                 rejected.append(pair)
                 continue
             root = dsu.union(ra, rb)
@@ -175,7 +197,7 @@ def cluster_matches(
             {"left_id": a, "right_id": b, **edges[(a, b)].explanation()}
             for a, b in sorted(comp_edges)
         ]
-        splits.append(SplitInfo(component, conflicts, rejected, parts, evidence))
+        splits.append(SplitInfo(component, conflicts, rejected, parts, evidence, apart))
 
     clusters.sort()
     return Clustering(clusters=clusters, edges=kept, splits=splits)
@@ -269,9 +291,15 @@ def merge(
     raw: Mapping[str, RawRecord],
     records: Mapping[str, NormalizedRecord],
     results: Iterable[PairResult],
+    *,
+    human_links: Iterable[PairResult] = (),
+    cannot_link: Iterable[Pair] = (),
 ) -> MergeOutput:
-    """Cluster, build golden records and the audit log of every merge."""
-    clustering = cluster_matches(records, results)
+    """Cluster, build golden records and the audit log of every merge. Review
+    decisions (see `cluster_matches`) are applied when given."""
+    clustering = cluster_matches(
+        records, results, human_links=human_links, cannot_link=cannot_link
+    )
     rejected_by_record: dict[str, list[Pair]] = defaultdict(list)
     for split in clustering.splits:
         for pair in split.rejected_edges:

@@ -28,11 +28,13 @@ flowchart LR
     splits --> api
     api --> ui["review UI<br/>(review-ui/)"]
     ui -->|Approve / Reject| decisions[(data/review_decisions.csv)]
+    decisions -->|make apply-review| reviewed[(out/reviewed/<br/>+ decisions_applied.jsonl)]
 ```
 
 `resolver run` (`src/resolver/cli.py`) runs everything left of the review API and
-writes every file under `out/`. Review decisions are recorded, **not yet applied**:
-nothing reads `data/review_decisions.csv` back into the clustering.
+writes every file under `out/`. `make apply-review` runs it again with the review
+decisions applied and writes `out/reviewed/`, so `out/` always stays the automatic
+result that evaluation and CI measure.
 
 ## Blocking
 
@@ -146,6 +148,23 @@ sequenceDiagram
 and what it means: `same_entity` / `different_entities` for a pair,
 `split_correct` / `split_wrong` for a conflict split.
 
+### Applying decisions
+
+`make apply-review` (`resolver run --decisions data/review_decisions.csv --out
+out/reviewed`) re-clusters with the latest decision per item:
+
+| Decision | Applied as | Status in `decisions_applied.jsonl` |
+|---|---|---|
+| pair, Approve (same person) | a `human_approved` link, added before automatic edges when a component is re-clustered | `merged`, or `cut_by_safety_rule` |
+| pair, Reject (different people) | a cannot-link pair, kept apart like conflicting identifiers | `separated` or `already_apart` |
+| split, Approve (split is correct) | nothing to change | `split_kept` |
+| split, Reject (should be one entity) | **refused**: it would merge records whose email and phone both differ | `refused_safety_rule` |
+| item no longer in this run's queue | ignored (data regenerated or config changed) | `stale` |
+
+The safety rule outranks reviewers: no decision can put conflicting identifiers in
+one cluster. Approved links keep their field scores in the audit log under
+`rule="human_approved"`, so a merge stays explainable and can be undone like any other.
+
 ## Evaluation
 
 | Script | Make target | Measures | Writes |
@@ -172,4 +191,5 @@ CI runs `make all` on a clean checkout and fails if the committed results differ
 | `out/splits.jsonl` | `resolver run` | components split by the conflict check, with evidence |
 | `out/review.jsonl` | `resolver run` | every REVIEW pair with its explanation |
 | `data/review_decisions.csv` | review UI | append-only human decisions (gitignored) |
+| `out/reviewed/*`, `decisions_applied.jsonl` | `make apply-review` | the same outputs with review decisions applied, and what each decision did |
 | `docs/results.md`, `docs/threshold_sweep.png` | `make eval`, `make compare` | measured results |

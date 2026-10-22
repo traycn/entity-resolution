@@ -73,7 +73,7 @@ A conflict-split item: three records joined by a shared email and a shared phone
 | <kbd>U</kbd> | Next undecided item |
 | <kbd>?</kbd> | Show shortcuts |
 
-Decisions are appended to `data/review_decisions.csv`, one row per click (the latest row per item wins).
+Decisions are appended to `data/review_decisions.csv`, one row per click (the latest row per item wins). `make apply-review` applies them: approved pairs merge, rejected pairs are kept apart, and the result goes to `out/reviewed/` with a report of what each decision did. The safety rule still wins, so "should be one entity" on a conflict split is refused.
 
 ## Run it
 Prerequisites: Python 3.12 with [uv](https://docs.astral.sh/uv/), `make`, and Node 22 for the review UI only.
@@ -90,6 +90,7 @@ make review   # review UI at http://127.0.0.1:5173 (API on :8000); Ctrl-C stops 
 | `make resolve` | Block, score, cluster and merge into `out/` |
 | `make eval` | Score `out/` against ground truth, rerun five more seeds, write `docs/results.md` and the README Result |
 | `make compare` | Compare the four auto-merge policies on six seeds |
+| `make apply-review` | Re-cluster with the review decisions applied, into `out/reviewed/` |
 | `make review` | Start the review API and UI |
 | `make test`, `make lint` | pytest; ruff and `mypy --strict` |
 
@@ -108,4 +109,4 @@ config.toml     thresholds, weights and the auto-merge policy
 ## Limitations
 - **Synthetic data.** Every number comes from a generator, not production data. Its birth dates are never mistyped, so the cost of the DOB check is likely understated.
 - **Known wrong merges.** A same-name parent and child with a birth date missing, or household members with similar first names sharing a phone, can still merge; both are measured under [Known limitations](docs/results.md#known-limitations).
-- **Review decisions are recorded, not applied.** Nothing yet reads `data/review_decisions.csv` back into the clusters.
+- **Reviewers cannot override the safety rule.** A conflict split confirmed as one person (identity drift: an old phone, then a new email) stays split even after review.

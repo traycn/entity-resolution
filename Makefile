@@ -1,4 +1,4 @@
-.PHONY: data resolve eval compare merge-report blocking-report review test lint all
+.PHONY: data resolve eval compare apply-review merge-report blocking-report review test lint all
 
 data:
 	uv run python data/generate.py --n 50000 --dup-rate 0.25 --seed 42
@@ -16,6 +16,12 @@ eval:
 # six seeds; fills the policy comparison and DOB-gap blocks of docs/results.md.
 compare:
 	uv run python eval/compare_policies.py --readme README.md
+
+# Apply the review decisions (data/review_decisions.csv) on top of the automatic
+# run: approved pairs merge, rejected pairs stay apart, the safety rule still wins.
+# Writes out/reviewed/ (incl. decisions_applied.jsonl); out/ stays automatic.
+apply-review:
+	uv run resolver run --sources data/sources --out out/reviewed --decisions data/review_decisions.csv
 
 merge-report:
 	uv run python eval/merge_report.py --out out --truth data/truth.csv

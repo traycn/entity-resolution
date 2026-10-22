@@ -67,6 +67,7 @@ tests/
 ### M7 — Review UI
 - FastAPI endpoint serving REVIEW pairs; Vite + React + Tailwind page showing side-by-side records with field-level scores and Approve / Reject buttons. Decisions write to `data/review_decisions.csv`.
 - Clusters split by the conflict check (`out/splits.jsonl`) must appear in the review queue with the evidence that linked them: the component's members, the MATCH edges with their explanations (per-field scores, rule), the conflicting pairs, and the edges the split rejected. A reviewer must be able to see why the records were connected and why they were split.
+- Applying decisions (`make apply-review` → `out/reviewed/`): approved pairs become `human_approved` links that win over automatic edges; rejected pairs become cannot-link constraints; stale decisions (item no longer in the queue) are skipped. The safety rule outranks reviewers: a split marked "should be one entity" is refused (`refused_safety_rule`). `out/` stays the automatic run that eval and CI measure.
 - **Accept:** works locally with `make review`.
 
 ### M8 — Polish
