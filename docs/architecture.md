@@ -100,9 +100,9 @@ Thresholds and weights live in `src/resolver/config.toml` (`RESOLVER_CONFIG` ove
 ```mermaid
 flowchart TD
     edges["MATCH edges"] --> cc["connected components"]
-    cc --> check{"any pair in the component<br/>with conflicting identifiers?<br/>(even if never compared directly)"}
+    cc --> check{"any pair in the component<br/>with conflicting identifiers, or same<br/>first name + different DOBs?<br/>(even if never compared directly)"}
     check -->|no| keep["keep the component as one cluster"]
-    check -->|yes| relink["re-cluster: add edges strongest first,<br/>skip any edge that would join a<br/>conflicting pair (cannot-link)"]
+    check -->|yes| relink["re-cluster: add edges strongest first,<br/>skip any edge that would join a<br/>cannot-link pair"]
     relink --> parts["2+ clusters,<br/>recorded in splits.jsonl"]
     keep --> gold["golden record per cluster"]
     parts --> gold
@@ -113,6 +113,12 @@ a phone with C, and A and C differ on both. This is how identity drift looks (an
 phone, then a new email). The conflict check splits such components; each split is
 written to `out/splits.jsonl` with every MATCH edge's explanation, the conflicting
 pairs, the edges it cut and the resulting clusters, and appears in the review queue.
+
+The same cannot-link covers a birth-date mismatch (v1.1.0): two records with identical
+first names and different DOBs are scored REVIEW, but a third record with no DOB can
+exact-match both on a shared household email or phone and bridge them. Such pairs
+are listed as `dob_mismatches` in the split. A reviewer approving that exact pair
+lifts this one constraint; the conflicting-identifier rule has no override.
 
 **Survivorship** (`build_golden`) ranks a cluster's records by verified email first,
 then most recent `updated_at`, then record id, and takes each field group whole from
@@ -159,6 +165,7 @@ out/reviewed`) re-clusters with the latest decision per item:
 | pair, Reject (different people) | a cannot-link pair, kept apart like conflicting identifiers | `separated` or `already_apart` |
 | split, Approve (split is correct) | nothing to change | `split_kept` |
 | split, Reject (should be one entity) | **refused**: it would merge records whose email and phone both differ | `refused_safety_rule` |
+| split by a birth-date mismatch only, Reject | **refused**: approve the REVIEW pair itself to merge those two records | `refused_dob_rule` |
 | item no longer in this run's queue | ignored (data regenerated or config changed) | `stale` |
 
 The safety rule outranks reviewers: no decision can put conflicting identifiers in

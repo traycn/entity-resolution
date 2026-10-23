@@ -20,7 +20,7 @@ The same customer often exists as several records across CRM, ad platforms, and 
 _Written by `make eval` and `make compare` between the markers below; do not edit by hand._
 
 <!-- headline:start -->
-**Pairwise precision 0.9998** (mean over 6 seeds, range 0.9996-1.0000) at **0.8698 recall on ordinary duplicates**, with 0 hard_dup merges. 10 of the 12 wrong-entity pairs across all seeds involve a same-name parent and child (Jr./Sr.); every wrong merge links different people through a shared phone or email. See [Known limitations](docs/results.md#known-limitations).
+**Pairwise precision 0.9999** (mean over 6 seeds, range 0.9998-1.0000) at **0.8698 recall on ordinary duplicates**, with 0 hard_dup merges. 2 of the 4 wrong-entity pairs across all seeds involve a same-name parent and child (Jr./Sr.); every wrong merge links different people through a shared phone or email. See [Known limitations](docs/results.md#known-limitations).
 <!-- headline:end -->
 
 ### Auto-merge policy comparison
@@ -33,10 +33,10 @@ Mean over all seeds (Jr./Sr. and mixed clusters summed):
 
 | Policy | Precision | Ordinary recall | REVIEW queue | drift_chain merged | Mixed clusters | Jr./Sr. pairs MATCHed |
 |---|---:|---:|---:|---:|---:|---:|
-| original (no mismatch rule) | 0.9982 | 0.8876 | 1,662 | 739 / 2,250 | 92 | 118 / 118 |
-| strict (any other-ID mismatch) | 0.9993 | 0.7379 | 4,990 | 0 / 2,250 | 28 | 30 / 118 |
-| **refined (name-aware + DOB mismatch)** | 0.9998 | 0.8698 | 2,208 | 649 / 2,250 | 6 | 6 / 118 |
-| refined + missing-DOB guard | 0.9999 | 0.8431 | 2,902 | 520 / 2,250 | 2 | 1 / 118 |
+| original (no mismatch rule) | 0.9999 | 0.8876 | 1,662 | 739 / 2,250 | 4 | 118 / 118 |
+| strict (any other-ID mismatch) | 0.9999 | 0.7378 | 4,990 | 0 / 2,250 | 2 | 30 / 118 |
+| **refined (name-aware + DOB mismatch)** | 0.9999 | 0.8698 | 2,208 | 649 / 2,250 | 3 | 6 / 118 |
+| refined + missing-DOB guard | 1.0000 | 0.8431 | 2,902 | 520 / 2,250 | 2 | 1 / 118 |
 <!-- policies:end -->
 
 ### Seed 42 detail
@@ -46,8 +46,8 @@ Detail for seed 42, 50,000 synthetic records. Every seed, recall by duplicate ki
 | Metric | Value |
 |---|---|
 | Records processed | 50,000 |
-| Duplicates resolved | 10,052 records merged away |
-| Pairwise precision | 0.9996 (4 wrong-entity pairs; 0 of 238 hard_dup pairs merged) |
+| Duplicates resolved | 10,051 records merged away |
+| Pairwise precision | 0.9998 (2 wrong-entity pairs; 0 of 238 hard_dup pairs merged) |
 | Pairwise recall | 0.8659 on ordinary duplicates; 0.7644 on all true pairs |
 | Pairs sent to human review | 2,226 |
 | Runtime (50k records) | 4.8 s (block, normalize, score, cluster) |
@@ -120,4 +120,5 @@ src/resolver/config.toml  thresholds, weights and the auto-merge policy
 ## Limitations
 - **Synthetic data.** Every number comes from a generator, not production data. Its birth dates are never mistyped, so the cost of the DOB check is likely understated.
 - **Known wrong merges.** A same-name parent and child with a birth date missing, or household members with similar first names sharing a phone, can still merge; both are measured under [Known limitations](docs/results.md#known-limitations).
+- **Birth dates keep same-name relatives apart in clustering (v1.1.0).** Two records with the same first name and different birth dates are never clustered together, even through a third record that has no birth date. A reviewer can approve that exact pair to override it, because DOB typos happen.
 - **Reviewers cannot override the safety rule.** A conflict split confirmed as one person (identity drift: an old phone, then a new email) stays split even after review.

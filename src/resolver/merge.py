@@ -6,6 +6,11 @@ records, A-B-C with A/C in conflict) is re-clustered under a cannot-link
 constraint: edges are added strongest first and an edge is skipped if it would put
 a conflicting pair in the same cluster.
 
+The same constraint covers a birth-date mismatch (`is_dob_mismatch`: identical
+first names, both DOBs present and different), so a record without a DOB cannot
+bridge a same-name parent and child. A reviewer approving that exact pair lifts
+it; nothing lifts the identifier-conflict rule.
+
 Every multi-record cluster becomes one golden record plus one audit entry. The
 audit entry carries the original source rows, so `unmerge` can restore them.
 """
@@ -27,6 +32,7 @@ from resolver.scoring import (
     Decision,
     NormalizedRecord,
     PairResult,
+    first_name_similarity,
     has_conflicting_identifiers,
 )
 
@@ -78,6 +84,9 @@ class SplitInfo:
     # Explanation of every MATCH edge in the component: the evidence that linked it.
     edges: list[dict[str, Any]] = field(default_factory=list)
     human_rejected: list[Pair] = field(default_factory=list)  # reviewer cannot-links
+    # Same first name, different birth dates: kept apart unless a reviewer approved
+    # that exact pair.
+    dob_mismatches: list[Pair] = field(default_factory=list)
 
 
 @dataclass
@@ -122,6 +131,15 @@ def _key(a: str, b: str) -> Pair:
 HUMAN_RULE = "human_approved"
 
 
+def is_dob_mismatch(left: NormalizedRecord, right: NormalizedRecord) -> bool:
+    """Identical first names (as scoring's exact_id_dob_mismatch rule compares
+    them) with both birth dates present and different: a same-name relative."""
+    ld, rd = left.get("dob"), right.get("dob")
+    if not (ld and rd) or ld == rd:
+        return False
+    return first_name_similarity(left, right) == 1.0
+
+
 def cluster_matches(
     records: Mapping[str, NormalizedRecord],
     results: Iterable[PairResult],
@@ -131,16 +149,20 @@ def cluster_matches(
 ) -> Clustering:
     """Cluster every record in `records` over the MATCH edges in `results`.
 
-    Records without a MATCH edge become singleton clusters. Review decisions, when
-    given, are applied on top: `human_links` (rule HUMAN_RULE) join like MATCH edges
-    and win over automatic edges when a component has to be split; `cannot_link`
-    pairs are kept apart like conflicting identifiers. The conflict check still
-    applies to human links: no decision merges conflicting identifiers.
+    Records without a MATCH edge become singleton clusters. Inside a component,
+    pairs with conflicting identifiers and DOB-mismatch pairs (`is_dob_mismatch`)
+    are kept apart. Review decisions, when given, are applied on top: `human_links`
+    (rule HUMAN_RULE) join like MATCH edges and win over automatic edges when a
+    component has to be split, and a human link lifts the DOB cannot-link for its
+    own pair; `cannot_link` pairs are kept apart like conflicting identifiers. The
+    conflict check still applies to human links: no decision merges conflicting
+    identifiers.
     """
     edges = {
         _key(r.left_id, r.right_id): r for r in results if r.decision is Decision.MATCH
     }
-    edges.update((_key(r.left_id, r.right_id), r) for r in human_links)
+    approved = {_key(r.left_id, r.right_id): r for r in human_links}
+    edges.update(approved)
     human_apart = {_key(a, b) for a, b in cannot_link}
     for pair in human_apart:
         edges.pop(pair, None)
@@ -163,13 +185,20 @@ def cluster_matches(
             if has_conflicting_identifiers(records[a], records[b])
         ]
         apart = [p for p in combinations(component, 2) if p in human_apart]
-        if not conflicts and not apart:
+        dob_apart = [
+            (a, b)
+            for a, b in combinations(component, 2)
+            if (a, b) not in approved
+            and not has_conflicting_identifiers(records[a], records[b])
+            and is_dob_mismatch(records[a], records[b])
+        ]
+        if not conflicts and not apart and not dob_apart:
             clusters.append(component)
             kept.update((p, edges[p]) for p in comp_edges)
             continue
 
         keep_apart: dict[str, set[str]] = defaultdict(set)
-        for a, b in conflicts + apart:
+        for a, b in conflicts + apart + dob_apart:
             keep_apart[a].add(b)
             keep_apart[b].add(a)
         dsu = _DisjointSet(component)
@@ -197,7 +226,9 @@ def cluster_matches(
             {"left_id": a, "right_id": b, **edges[(a, b)].explanation()}
             for a, b in sorted(comp_edges)
         ]
-        splits.append(SplitInfo(component, conflicts, rejected, parts, evidence, apart))
+        splits.append(
+            SplitInfo(component, conflicts, rejected, parts, evidence, apart, dob_apart)
+        )
 
     clusters.sort()
     return Clustering(clusters=clusters, edges=kept, splits=splits)

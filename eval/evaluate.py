@@ -707,8 +707,16 @@ def render_markdown(
             "- **Synthetic birth dates are never corrupted.** The generator only drops a "
             "DOB (about 20% of duplicates), never mistypes or reformats it beyond what the "
             "normalizer parses, so the DOB guard (`exact_id_dob_mismatch`) sends no true "
-            "duplicate to REVIEW here. On real data, DOB typos would turn some true "
-            "duplicates into REVIEW pairs: its recall cost is likely understated."
+            "duplicate to REVIEW here and the clustering DOB cannot-link (v1.1.0) never "
+            "splits one. On real data, DOB typos would turn some true duplicates into "
+            "REVIEW pairs or splits: their recall cost is likely understated. A reviewer "
+            "can approve such a pair to lift the cannot-link."
+        ),
+        (
+            "- **A record without a DOB picks a side.** When a DOB-less record matches "
+            "both a parent and a same-name child, clustering keeps the stronger edge "
+            "(then the lower record ids) and cuts the other, so a true duplicate can end "
+            "up with the child. This is the small recall cost of the DOB cannot-link."
         ),
         (
             "- **Households with similar first names.** A shared household phone or email "

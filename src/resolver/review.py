@@ -139,6 +139,12 @@ def describe_split(split: Mapping[str, Any]) -> str:
     n = len(split["component"])
     parts = len(split["clusters"])
     conflicts: list[list[str]] = split["conflicts"]
+    if not conflicts and split.get("dob_mismatches"):  # same name, different DOBs
+        a, b = split["dob_mismatches"][0]
+        return (
+            f"{n} records linked by exact matches, but {a} and {b} share a first name "
+            f"and have different birth dates; split into {parts} clusters"
+        )
     if not conflicts:  # split only by a reviewer's "different people" decision
         a, b = split["human_rejected"][0]
         return f"{n} records linked, but a reviewer kept {a} and {b} apart; split into {parts} clusters"
@@ -349,6 +355,8 @@ def record_decision(
 #   already_apart        rejected pair was never in one cluster; kept apart from now on
 #   split_kept           split confirmed; nothing to change
 #   refused_safety_rule  "should be one entity" would merge conflicting IDs
+#   refused_dob_rule     "should be one entity" on a split made only by a birth-date
+#                        mismatch: approve that REVIEW pair instead (one pair at a time)
 #   stale                the item is no longer in this run's review queue
 
 
@@ -387,7 +395,7 @@ def plan_decisions(
     review = {
         (r.left_id, r.right_id): r for r in results if r.decision is Decision.REVIEW
     }
-    components = {tuple(s.component) for s in splits}
+    components = {tuple(s.component): s for s in splits}
     plan = DecisionPlan()
     for item_id, row in sorted(rows.items()):
         ids = tuple(sorted(row["record_ids"].split(";")))
@@ -407,6 +415,12 @@ def plan_decisions(
             status, reason = "stale", "no split with these members in this run"
         elif row["outcome"] == "split_correct":
             status = "split_kept"
+        elif not components[ids].conflicts and components[ids].dob_mismatches:
+            status = "refused_dob_rule"
+            reason = (
+                "split by a birth-date mismatch; approve the REVIEW pair itself "
+                "to merge those two records"
+            )
         else:
             status = "refused_safety_rule"
             reason = "would merge records whose email and phone both differ"
