@@ -85,7 +85,7 @@ flowchart TD
 - **Only an exact email or phone match can auto-merge.** The weighted fuzzy score
   (email 0.35, phone 0.25, name 0.25, address 0.15, re-normalized over the fields present
   on both records) only chooses between `REVIEW` and `NO_MATCH`, because
-  `allow_weighted_match = false` in `config.toml`. Name and address alone cannot tell a
+  `allow_weighted_match = false` in `src/resolver/config.toml`. Name and address alone cannot tell a
   person from a same-named relative at the same address.
 - **The safety rule comes first.** Two records with different emails *and* different
   phones are never merged directly. `tests/test_safety.py` covers it.
@@ -93,7 +93,7 @@ flowchart TD
   refined + missing-DOB-guard policies are compared on six seeds in
   [results.md](results.md#exact-id-policy-comparison); the refined policy ships.
 
-Thresholds and weights live in `config.toml` (`RESOLVER_CONFIG` overrides the path).
+Thresholds and weights live in `src/resolver/config.toml` (`RESOLVER_CONFIG` overrides the path).
 
 ## Clustering and survivorship
 

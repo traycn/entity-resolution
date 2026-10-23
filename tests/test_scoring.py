@@ -1,10 +1,15 @@
+import importlib.resources
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from resolver import scoring
 from resolver.scoring import (
+    DEFAULT_CONFIG_PATH,
     Decision,
     NormalizedRecord,
+    ScoringConfig,
     Thresholds,
     first_name_similarity,
     has_conflicting_identifiers,
@@ -415,3 +420,54 @@ def test_conflict_still_records_field_scores() -> None:
     result = score_pair(left, right, Thresholds())
     assert result.rule == "conflict"
     assert set(result.field_scores) == {"name", "email", "phone"}
+
+
+@pytest.fixture
+def fresh_config_cache() -> Iterator[None]:
+    """load_config() caches on its path argument, so env changes need a cold cache."""
+    load_config.cache_clear()
+    yield
+    load_config.cache_clear()
+
+
+def test_default_config_resolves_via_package_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RESOLVER_CONFIG", raising=False)
+    assert DEFAULT_CONFIG_PATH.is_file()
+    assert DEFAULT_CONFIG_PATH == importlib.resources.files("resolver") / "config.toml"
+    assert scoring._config_path() == DEFAULT_CONFIG_PATH
+    assert load_config().weights
+
+
+def test_resolver_config_env_overrides_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_config_cache: None
+) -> None:
+    path = _write_config(tmp_path, review=0.123)
+    monkeypatch.setenv("RESOLVER_CONFIG", str(path))
+    assert load_config().review == 0.123
+    assert load_config().review != 0.75
+
+
+def test_missing_resolver_config_fails_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_config_cache: None
+) -> None:
+    missing = tmp_path / "nope.toml"
+    monkeypatch.setenv("RESOLVER_CONFIG", str(missing))
+    with pytest.raises(FileNotFoundError, match=r"nope\.toml.*RESOLVER_CONFIG"):
+        load_config()
+
+
+def test_loaded_config_equals_pre_move_values(
+    monkeypatch: pytest.MonkeyPatch, fresh_config_cache: None
+) -> None:
+    """Values the repo-root config.toml held before it moved into the package."""
+    monkeypatch.delenv("RESOLVER_CONFIG", raising=False)
+    assert load_config() == ScoringConfig(
+        match=0.92,
+        review=0.75,
+        min_match_weight=0.50,
+        min_first_name_similarity=0.80,
+        allow_weighted_match=False,
+        weights={"email": 0.35, "phone": 0.25, "name": 0.25, "address": 0.15},
+    )

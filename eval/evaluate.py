@@ -396,7 +396,7 @@ def evaluate_seed(
     if clusters is not None and clusters != clustering.clusters:
         raise SystemExit(
             "out/clusters.csv does not match an in-process run on the same sources and "
-            "config.toml; re-run `make resolve`."
+            "src/resolver/config.toml; re-run `make resolve`."
         )
     clusters = clustering.clusters
     n = prep.n_records

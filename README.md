@@ -84,6 +84,8 @@ make all      # generate → resolve → evaluate → compare policies (about 3 
 make review   # review UI at http://127.0.0.1:5173 (API on :8000); Ctrl-C stops both
 ```
 
+Upgrading an existing checkout from before v1.0.0? Run `uv sync --reinstall-package entity-resolution` once to restore the `resolver` command.
+
 | Target | What it does |
 |---|---|
 | `make data` | Generate 50,000 synthetic records with known duplicates (seed 42) |
@@ -96,6 +98,15 @@ make review   # review UI at http://127.0.0.1:5173 (API on :8000); Ctrl-C stops 
 
 CI checks formatting, lint, types and tests, builds the review UI, and runs `make all` on a clean checkout, failing if the committed results above don't reproduce.
 
+### Install as a dependency
+The distribution is `entity-resolution`; the import name stays `resolver`. Pin a release tag (`v1.0.0` once it is tagged):
+
+```bash
+uv add "entity-resolution @ git+https://github.com/traycn/entity-resolution@v1.0.0"
+```
+
+`config.toml` ships inside the package. Point `RESOLVER_CONFIG` at another file to override it.
+
 ## Repository layout
 ```
 src/resolver/   normalize, blocking, scoring, merge, review queue + API, CLI
@@ -103,7 +114,7 @@ data/           generate.py (synthetic sources + ground truth)
 eval/           evaluate.py, compare_policies.py, per-stage reports
 review-ui/      Vite + React + Tailwind review page
 docs/           architecture.md, results.md, threshold sweep chart
-config.toml     thresholds, weights and the auto-merge policy
+src/resolver/config.toml  thresholds, weights and the auto-merge policy
 ```
 
 ## Limitations

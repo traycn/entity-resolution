@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import functools
+import importlib.resources
 import os
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import TypedDict
 
@@ -24,8 +26,8 @@ from resolver.normalize import (
 
 SCORED_FIELDS = ("email", "phone", "name", "address")
 
-# Repo-root config.toml unless RESOLVER_CONFIG points elsewhere.
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
+# The config.toml shipped inside the package, unless RESOLVER_CONFIG points elsewhere.
+DEFAULT_CONFIG_PATH = importlib.resources.files("resolver") / "config.toml"
 
 
 class Decision(str, Enum):
@@ -57,7 +59,7 @@ class ScoringConfig:
     weights: Mapping[str, float]
 
 
-def _config_path() -> Path:
+def _config_path() -> Traversable:
     env = os.environ.get("RESOLVER_CONFIG")
     return Path(env) if env else DEFAULT_CONFIG_PATH
 
@@ -65,7 +67,12 @@ def _config_path() -> Path:
 @functools.cache
 def load_config(path: Path | None = None) -> ScoringConfig:
     """Read thresholds and field weights from config.toml (cached per path)."""
-    with (path or _config_path()).open("rb") as fh:
+    source = path or _config_path()
+    if not source.is_file():
+        raise FileNotFoundError(
+            f"resolver config not found: {source} (check RESOLVER_CONFIG)"
+        )
+    with source.open("rb") as fh:
         raw = tomllib.load(fh)
     thresholds, weights, policy = raw["thresholds"], raw["weights"], raw["policy"]
     unknown = set(weights) - set(SCORED_FIELDS)

@@ -1,5 +1,5 @@
 # Scoring configuration (Milestone 4). Read by resolver.scoring.load_config.
-# Override the path with the RESOLVER_CONFIG environment variable.
+# Ships inside the package (resolver/config.toml). Override the path with the RESOLVER_CONFIG environment variable.
 
 [policy]
 # Auto-merge policy: a pair is MATCHed (merged without a human) ONLY when the two
